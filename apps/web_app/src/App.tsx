@@ -124,7 +124,7 @@ const AuthModal = ({ isOpen, onClose, onSuccess }: { isOpen: boolean, onClose: (
         <button className="modal-close" onClick={onClose}><X size={28} /></button>
         <h2 className="modal-title">{isLogin ? 'Welcome Back' : 'Join GIPJAZES'}</h2>
         <p className="modal-subtitle">
-          {isLogin ? 'Log in to continue your journey.' : 'Register to upload and save you favorite content.'}
+          {isLogin ? 'Log in to continue your journey.' : 'Register to upload and save your favorite content.'}
         </p>
 
         <div className="form-group">

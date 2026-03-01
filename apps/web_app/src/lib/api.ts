@@ -9,7 +9,7 @@ export const GIPJAZES_API = {
             // NOTE: Our backend expects a `username` field for login, but we collected an `email`. 
             // For now, we'll map email to username just to hit the endpoint correctly.
             const response = await axios.post(`${REST_API_URL}/auth/login`, {
-                username: email,
+                email: email,
                 password: password
             });
             return response.data;
