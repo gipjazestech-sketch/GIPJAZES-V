@@ -1,0 +1,90 @@
+syntax = "proto3";
+
+package gipjazes;
+
+option go_package = "github.com/gipjazes/backend/internal/proto";
+
+import "google/protobuf/timestamp.proto";
+
+// --- Models ---
+
+message User {
+  string id = 1; // UUID
+  string username = 2;
+  string display_name = 3;
+  string avatar_url = 4;
+  bool is_verified = 5;
+  uint32 follower_count = 6;
+  uint32 following_count = 7;
+}
+
+message Video {
+  string id = 1; // UUID
+  string creator_id = 2;
+  string video_url = 3; // HLS (m3u8) path
+  string thumbnail_url = 4;
+  string description = 5;
+  uint32 like_count = 6;
+  uint32 share_count = 7;
+  uint32 comment_count = 8;
+  google.protobuf.Timestamp created_at = 9;
+  User creator = 10;
+}
+
+// --- Requests/Responses ---
+
+message GetFeedRequest {
+  string user_id = 1;
+  string cursor = 2; // Pagination
+  int32 limit = 3;
+}
+
+message FeedResponse {
+  repeated Video videos = 1;
+  string next_cursor = 2;
+}
+
+message SignedUrlRequest {
+  string filename = 1;
+  string content_type = 2;
+}
+
+message SignedUrlResponse {
+  string upload_url = 1;
+  string file_path = 2; // GCS relative path
+}
+
+message RegisterRequest {
+  string username = 1;
+  string email = 2;
+  string password = 3;
+}
+
+message LoginRequest {
+  string email = 1;
+  string password = 2;
+}
+
+message AuthResponse {
+  string token = 1;
+  User user = 2;
+}
+
+message TakedownRequest {
+  string video_id = 1;
+  string reason = 2;
+}
+
+message TakedownResponse {
+  bool success = 1;
+}
+
+// --- Services ---
+
+service GIPJAZESService {
+  rpc Register(RegisterRequest) returns (AuthResponse);
+  rpc Login(LoginRequest) returns (AuthResponse);
+  rpc GetFeed(GetFeedRequest) returns (FeedResponse);
+  rpc GetUploadUrl(SignedUrlRequest) returns (SignedUrlResponse);
+  rpc AdminTakedown(TakedownRequest) returns (TakedownResponse);
+}
