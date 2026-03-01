@@ -79,9 +79,16 @@ func (s *masterServer) AdminTakedown(ctx context.Context, req *pb.TakedownReques
 }
 
 func main() {
-	// 1. Load Config (Simulated from env)
-	dbDSN := "host=localhost port=5432 user=gipjazes password=jazes_pass_2026 dbname=gipjazes_main sslmode=disable"
-	redisAddr := "localhost:6379"
+	// 1. Load Config (Using Environment Variables for Cloud)
+	dbDSN := os.Getenv("DATABASE_URL")
+	if dbDSN == "" {
+		dbDSN = "host=localhost port=5432 user=gipjazes password=jazes_pass_2026 dbname=gipjazes_main sslmode=disable"
+	}
+
+	redisAddr := os.Getenv("REDIS_URL")
+	if redisAddr == "" {
+		redisAddr = "localhost:6379"
+	}
 
 	// 2. Initialize Postgres
 	db, err := sql.Open("postgres", dbDSN)
