@@ -1,0 +1,7 @@
+{
+    "name": "gipjazes-v-web",
+    "version": "1.0.0",
+    "scripts": {
+        "build": "bash ./build.sh"
+    }
+}

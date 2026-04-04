@@ -1,0 +1,29 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "apps/web_app/package.json",
+      "use": "@vercel/static-build",
+      "config": {
+        "distDir": "dist"
+      }
+    },
+    {
+        "src": "apps/admin_dashboard/package.json",
+        "use": "@vercel/static-build",
+        "config": {
+          "distDir": "dist"
+        }
+    }
+  ],
+  "routes": [
+    {
+      "src": "/admin/(.*)",
+      "dest": "apps/admin_dashboard/$1"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "apps/web_app/$1"
+    }
+  ]
+}

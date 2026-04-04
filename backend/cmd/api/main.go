@@ -1,0 +1,918 @@
+package main
+
+import (
+	"context"
+	"database/sql"
+	"encoding/json"
+	"fmt"
+	"io"
+	"log"
+	"net"
+	"net/http"
+	"os"
+	"path/filepath"
+	"time"
+
+	"cloud.google.com/go/storage"
+	_ "github.com/lib/pq"
+	"github.com/redis/go-redis/v9"
+
+	"github.com/gipjazes/backend/internal/api"
+	pb "github.com/gipjazes/backend/internal/proto"
+	"github.com/gipjazes/backend/internal/repository"
+	"github.com/gipjazes/backend/internal/usecase"
+	"github.com/gipjazes/backend/pkg/auth"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/reflection"
+)
+
+type masterServer struct {
+	pb.UnimplementedGIPJAZESServiceServer
+	authHandler   *api.AuthHandler
+	feedService   *usecase.FeedService
+	uploadHandler *api.UploadHandler
+	adminHandler  *api.AdminHandler
+	videoRepo     *repository.PostgresVideoRepository
+	userRepo      *repository.PostgresUserRepository
+	messageRepo   *repository.PostgresMessageRepository
+	adminRepo     *repository.AdminRepository
+}
+
+// Delegate methods to specific handlers
+func (s *masterServer) Register(ctx context.Context, req *pb.RegisterRequest) (*pb.AuthResponse, error) {
+	return s.authHandler.Register(ctx, req)
+}
+
+func (s *masterServer) Login(ctx context.Context, req *pb.LoginRequest) (*pb.AuthResponse, error) {
+	return s.authHandler.Login(ctx, req)
+}
+
+func (s *masterServer) GetFeed(ctx context.Context, req *pb.GetFeedRequest) (*pb.FeedResponse, error) {
+	// Use cursor for relative offset pagination
+	var offset int64 = 0
+	if req.Cursor != "" {
+		fmt.Sscanf(req.Cursor, "%d", &offset)
+	}
+
+	videos, err := s.videoRepo.GetRecentVideos(ctx, int64(req.Limit), offset, "")
+	if err != nil {
+		return nil, err
+	}
+	if videos == nil {
+		videos = []*pb.Video{}
+	}
+
+	nextCursor := ""
+	if len(videos) == int(req.Limit) {
+		nextCursor = fmt.Sprintf("%d", offset+int64(req.Limit))
+	}
+
+	return &pb.FeedResponse{Videos: videos, NextCursor: nextCursor}, nil
+}
+
+func (s *masterServer) GetUploadUrl(ctx context.Context, req *pb.SignedUrlRequest) (*pb.SignedUrlResponse, error) {
+	return s.uploadHandler.GetUploadUrl(ctx, req)
+}
+
+func (s *masterServer) AdminTakedown(ctx context.Context, req *pb.TakedownRequest) (*pb.TakedownResponse, error) {
+	return s.adminHandler.AdminTakedown(ctx, req)
+}
+
+func main() {
+	// 1. Load Config (Using Environment Variables for Cloud)
+	dbDSN := os.Getenv("DATABASE_URL")
+	if dbDSN == "" {
+		dbDSN = "host=localhost port=5432 user=gipjazes password=jazes_pass_2026 dbname=gipjazes_main sslmode=disable"
+	}
+
+	redisAddr := os.Getenv("REDIS_URL")
+	if redisAddr == "" {
+		redisAddr = "localhost:6379"
+	}
+
+	appPort := os.Getenv("PORT")
+	if appPort == "" {
+		appPort = "8080"
+	}
+
+	publicDomain := os.Getenv("RAILWAY_PUBLIC_DOMAIN")
+	if publicDomain != "" {
+		publicDomain = "https://" + publicDomain
+	} else {
+		publicDomain = "http://localhost:" + appPort
+	}
+
+	// 2. Initialize Postgres
+	db, err := sql.Open("postgres", dbDSN)
+	if err != nil {
+		log.Fatalf("failed to connect to postgres: %v", err)
+	}
+	defer db.Close()
+
+	// 3. Initialize Redis
+	rdb := redis.NewClient(&redis.Options{Addr: redisAddr})
+	defer rdb.Close()
+
+	// 4. Initialize GCP Storage
+	ctx := context.Background()
+	storageClient, err := storage.NewClient(ctx)
+	if err != nil {
+		log.Printf("Warning: GCS Client failed to init (expected if no key provided): %v", err)
+	}
+
+	// 5. Initialize Repositories & Services
+	tokenManager := auth.NewTokenManager("jazes_v_secret_key_change_me_in_prod", 24*time.Hour)
+	videoRepo := repository.NewPostgresVideoRepository(db)
+	userRepo := repository.NewPostgresUserRepository(db)
+	messageRepo := repository.NewPostgresMessageRepository(db)
+
+	feedService := usecase.NewFeedService(rdb)
+	adminRepo := repository.NewAdminRepository(db)
+	uploadHandler := api.NewUploadHandler(storageClient, "gipjazes-raw-videos")
+	adminHandler := api.NewAdminHandler(adminRepo, videoRepo, rdb)
+	authHandler := api.NewAuthHandler(userRepo, tokenManager)
+
+	// 6. Setup gRPC Server
+	lis, err := net.Listen("tcp", ":9090")
+	if err != nil {
+		log.Fatalf("failed to listen: %v", err)
+	}
+
+	s := grpc.NewServer()
+	srv := &masterServer{
+		feedService:   feedService,
+		uploadHandler: uploadHandler,
+		adminHandler:  adminHandler,
+		authHandler:   authHandler,
+		videoRepo:     videoRepo,
+		userRepo:      userRepo,
+		messageRepo:   messageRepo,
+		adminRepo:     adminRepo,
+	}
+	pb.RegisterGIPJAZESServiceServer(s, srv)
+
+	// Enable reflection for debugging (e.g. via Postman/grpcurl)
+	reflection.Register(s)
+
+	// --- 7. Start HTTP REST Gateway for Web App ---
+	go func() {
+		mux := http.NewServeMux()
+
+		mux.HandleFunc("/api/auth/register", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+			if r.Method == "OPTIONS" {
+				return
+			}
+
+			var req pb.RegisterRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				log.Printf("Register decode err: %v", err)
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			log.Printf("Incoming Register Request: %v", req.Email)
+
+			resp, err := srv.Register(context.Background(), &req)
+			if err != nil {
+				log.Printf("Register processing err: %v", err)
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(resp)
+		})
+
+		mux.HandleFunc("/api/auth/login", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+			if r.Method == "OPTIONS" {
+				return
+			}
+
+			var req pb.LoginRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				log.Printf("Login decode err: %v", err)
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			log.Printf("Incoming Login Request: %v", req.Email)
+
+			resp, err := srv.Login(context.Background(), &req)
+			if err != nil {
+				log.Printf("Login processing err: %v", err)
+				http.Error(w, err.Error(), http.StatusUnauthorized)
+				return
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(resp)
+		})
+
+		mux.HandleFunc("/api/feed", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+			if r.Method == "OPTIONS" {
+				return
+			}
+
+			// Parse query parameters
+			cursorStr := r.URL.Query().Get("cursor")
+			categoryStr := r.URL.Query().Get("category")
+
+			var offset int64 = 0
+			if cursorStr != "" {
+				fmt.Sscanf(cursorStr, "%d", &offset)
+			}
+			limit := 10
+
+			videos, err := srv.videoRepo.GetRecentVideos(context.Background(), int64(limit), offset, categoryStr)
+			if err != nil {
+				log.Printf("Feed fetch err: %v", err)
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+
+			nextCursor := ""
+			if len(videos) == limit {
+				nextCursor = fmt.Sprintf("%d", offset+int64(limit))
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"videos":      videos,
+				"next_cursor": nextCursor,
+			})
+		})
+
+		mux.HandleFunc("/api/categories", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Content-Type", "application/json")
+			categories := []string{"For You", "Comedy", "Music", "Gaming", "Tech", "Travel", "Food"}
+			json.NewEncoder(w).Encode(categories)
+		})
+
+		mux.HandleFunc("/api/upload", func(w http.ResponseWriter, r *http.Request) {
+			// Basic CORS
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+			if r.Method == "OPTIONS" {
+				return
+			}
+
+			// Authenticate Header
+			authHeader := r.Header.Get("Authorization")
+			if len(authHeader) < 8 || authHeader[:7] != "Bearer " {
+				http.Error(w, "Unauthorized: Missing or invalid token", http.StatusUnauthorized)
+				return
+			}
+			tokenStr := authHeader[7:]
+			claims, err := tokenManager.Verify(tokenStr)
+			if err != nil {
+				http.Error(w, "Unauthorized: Invalid session", http.StatusUnauthorized)
+				return
+			}
+
+			// Parse Multipart Form
+			err = r.ParseMultipartForm(100 << 20) // Allow up to 100MB
+			if err != nil {
+				http.Error(w, "File size too large", http.StatusBadRequest)
+				return
+			}
+
+			// Read file payload
+			file, handler, err := r.FormFile("video")
+			if err != nil {
+				http.Error(w, "Invalid video payload", http.StatusBadRequest)
+				return
+			}
+			defer file.Close()
+
+			// Prepare file storage locally
+			os.MkdirAll("uploads", os.ModePerm)
+			safeFilename := fmt.Sprintf("%d_%s", time.Now().UnixNano(), handler.Filename)
+			localPath := filepath.Join("uploads", safeFilename)
+			out, err := os.Create(localPath)
+			if err != nil {
+				http.Error(w, "Failed to save the file stream", http.StatusInternalServerError)
+				return
+			}
+			defer out.Close()
+			_, err = io.Copy(out, file)
+			if err != nil {
+				http.Error(w, "Failed writing file payload", http.StatusInternalServerError)
+				return
+			}
+
+			// Create a proper Video record in the DB using the native Postgres repo pointer
+			vid := &pb.Video{
+				CreatorId:   claims.UserID,
+				VideoUrl:    publicDomain + "/uploads/" + safeFilename,
+				Description: r.FormValue("description"), // Can be retrieved from formData text input
+			}
+
+			err = videoRepo.CreateVideo(context.Background(), vid)
+			if err != nil {
+				http.Error(w, fmt.Sprintf("Failed to link video with DB: %v", err), http.StatusInternalServerError)
+				return
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "video": vid})
+		})
+
+		mux.HandleFunc("/api/profile", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+			if r.Method == "OPTIONS" {
+				return
+			}
+
+			authHeader := r.Header.Get("Authorization")
+			if len(authHeader) < 8 || authHeader[:7] != "Bearer " {
+				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				return
+			}
+			tokenStr := authHeader[7:]
+			claims, err := tokenManager.Verify(tokenStr)
+			if err != nil {
+				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				return
+			}
+
+			// Check if we are requesting an external profile
+			targetUserID := r.URL.Query().Get("user_id")
+			if targetUserID == "" {
+				targetUserID = claims.UserID
+			}
+
+			// Get User Data
+			user, err := srv.userRepo.GetUserByID(context.Background(), targetUserID)
+			if err != nil {
+				http.Error(w, "User not found", http.StatusNotFound)
+				return
+			}
+
+			// Get Follow Stats
+			followers, following, _ := srv.userRepo.GetFollowCounts(context.Background(), targetUserID)
+
+			// Get User Videos
+			videos, err := srv.videoRepo.GetVideosByUserID(context.Background(), targetUserID)
+			if err != nil {
+				videos = []*pb.Video{} // Fallback
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"user":      user,
+				"followers": followers,
+				"following": following,
+				"videos":    videos,
+			})
+		})
+
+		mux.HandleFunc("/api/follow", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+			if r.Method == "OPTIONS" {
+				return
+			}
+
+			authHeader := r.Header.Get("Authorization")
+			if len(authHeader) < 8 || authHeader[:7] != "Bearer " {
+				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				return
+			}
+			tokenStr := authHeader[7:]
+			claims, err := tokenManager.Verify(tokenStr)
+			if err != nil {
+				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				return
+			}
+
+			var req map[string]string
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				http.Error(w, "Bad request", http.StatusBadRequest)
+				return
+			}
+			followeeID := req["followee_id"]
+			if followeeID == "" {
+				http.Error(w, "Missing followee_id", http.StatusBadRequest)
+				return
+			}
+
+			err = srv.userRepo.FollowUser(context.Background(), claims.UserID, followeeID)
+			if err != nil {
+				http.Error(w, "Failed to follow user", http.StatusInternalServerError)
+				return
+			}
+
+			// Fire Notification
+			_ = srv.adminRepo.CreateNotification(context.Background(), followeeID, claims.UserID, "follow", "New Follower", "Someone started following you!", nil)
+
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{"success": true})
+		})
+
+		mux.HandleFunc("/api/unfollow", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+			if r.Method == "OPTIONS" {
+				return
+			}
+
+			authHeader := r.Header.Get("Authorization")
+			if len(authHeader) < 8 || authHeader[:7] != "Bearer " {
+				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				return
+			}
+			tokenStr := authHeader[7:]
+			claims, err := tokenManager.Verify(tokenStr)
+			if err != nil {
+				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				return
+			}
+
+			var req map[string]string
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				http.Error(w, "Bad request", http.StatusBadRequest)
+				return
+			}
+			followeeID := req["followee_id"]
+			if followeeID == "" {
+				http.Error(w, "Missing followee_id", http.StatusBadRequest)
+				return
+			}
+
+			err = srv.userRepo.UnfollowUser(context.Background(), claims.UserID, followeeID)
+			if err != nil {
+				http.Error(w, "Failed to unfollow user", http.StatusInternalServerError)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{"success": true})
+		})
+
+		mux.HandleFunc("/api/followers", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+			if r.Method == "OPTIONS" {
+				return
+			}
+
+			userID := r.URL.Query().Get("user_id")
+			if userID == "" {
+				http.Error(w, "Missing user_id", http.StatusBadRequest)
+				return
+			}
+
+			users, err := srv.userRepo.GetFollowers(context.Background(), userID)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(users)
+		})
+
+		mux.HandleFunc("/api/following", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+			if r.Method == "OPTIONS" {
+				return
+			}
+
+			userID := r.URL.Query().Get("user_id")
+			if userID == "" {
+				http.Error(w, "Missing user_id", http.StatusBadRequest)
+				return
+			}
+
+			users, err := srv.userRepo.GetFollowing(context.Background(), userID)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(users)
+		})
+
+		mux.HandleFunc("/api/comments", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+			if r.Method == "OPTIONS" {
+				return
+			}
+
+			if r.Method == "GET" {
+				videoID := r.URL.Query().Get("video_id")
+				if videoID == "" {
+					http.Error(w, "Missing video_id", http.StatusBadRequest)
+					return
+				}
+				comments, err := srv.videoRepo.GetCommentsByVideoID(context.Background(), videoID)
+				if err != nil {
+					http.Error(w, err.Error(), http.StatusInternalServerError)
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(comments)
+				return
+			}
+
+			if r.Method == "POST" {
+				// Authenticate
+				authHeader := r.Header.Get("Authorization")
+				if len(authHeader) < 8 || authHeader[:7] != "Bearer " {
+					http.Error(w, "Unauthorized", http.StatusUnauthorized)
+					return
+				}
+				tokenStr := authHeader[7:]
+				claims, err := tokenManager.Verify(tokenStr)
+				if err != nil {
+					http.Error(w, "Unauthorized", http.StatusUnauthorized)
+					return
+				}
+
+				var req map[string]string
+				if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+					http.Error(w, "Bad request", http.StatusBadRequest)
+					return
+				}
+
+				videoID := req["video_id"]
+				content := req["content"]
+
+				if videoID == "" || content == "" {
+					http.Error(w, "Missing video_id or content", http.StatusBadRequest)
+					return
+				}
+
+				err = srv.videoRepo.CreateComment(context.Background(), videoID, claims.UserID, content)
+				if err != nil {
+					http.Error(w, err.Error(), http.StatusInternalServerError)
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(map[string]interface{}{"success": true})
+				return
+			}
+		})
+
+		mux.HandleFunc("/api/search", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+			if r.Method == "OPTIONS" {
+				return
+			}
+
+			q := r.URL.Query().Get("q")
+			if q == "" {
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode([]interface{}{})
+				return
+			}
+
+			videos, err := srv.videoRepo.SearchVideos(context.Background(), q)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(videos)
+		})
+
+		mux.HandleFunc("/api/messages", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+			if r.Method == "OPTIONS" {
+				return
+			}
+			authHeader := r.Header.Get("Authorization")
+			if len(authHeader) < 8 || authHeader[:7] != "Bearer " {
+				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				return
+			}
+			tokenStr := authHeader[7:]
+			claims, err := tokenManager.Verify(tokenStr)
+			if err != nil {
+				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				return
+			}
+
+			if r.Method == "GET" {
+				convID := r.URL.Query().Get("conversation_id")
+				if convID != "" {
+					msgs, err := srv.messageRepo.GetConversationMessages(context.Background(), convID, 50)
+					if err != nil {
+						http.Error(w, err.Error(), http.StatusInternalServerError)
+						return
+					}
+					w.Header().Set("Content-Type", "application/json")
+					json.NewEncoder(w).Encode(msgs)
+				} else {
+					chats, err := srv.messageRepo.GetUserConversations(context.Background(), claims.UserID)
+					if err != nil {
+						http.Error(w, err.Error(), http.StatusInternalServerError)
+						return
+					}
+					w.Header().Set("Content-Type", "application/json")
+					json.NewEncoder(w).Encode(chats)
+				}
+				return
+			}
+
+			if r.Method == "POST" {
+				var req struct {
+					ConversationID string `json:"conversation_id"`
+					Content        string `json:"content"`
+				}
+				if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+					http.Error(w, "Bad request", http.StatusBadRequest)
+					return
+				}
+				msg, err := srv.messageRepo.SendMessage(context.Background(), req.ConversationID, claims.UserID, req.Content)
+				if err != nil {
+					http.Error(w, err.Error(), http.StatusInternalServerError)
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(msg)
+				return
+			}
+		})
+
+		mux.HandleFunc("/api/messages/send_to_user", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+			if r.Method == "OPTIONS" {
+				return
+			}
+			authHeader := r.Header.Get("Authorization")
+			if len(authHeader) < 8 || authHeader[:7] != "Bearer " {
+				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				return
+			}
+			tokenStr := authHeader[7:]
+			claims, err := tokenManager.Verify(tokenStr)
+			if err != nil {
+				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				return
+			}
+
+			var req struct {
+				ReceiverID string `json:"receiver_id"`
+				Content    string `json:"content"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				http.Error(w, "Bad request", http.StatusBadRequest)
+				return
+			}
+
+			convID, err := srv.messageRepo.FindOrCreateDirectConversation(context.Background(), claims.UserID, req.ReceiverID)
+			if err != nil {
+				http.Error(w, "Failed to create conversation", http.StatusInternalServerError)
+				return
+			}
+
+			msg, err := srv.messageRepo.SendMessage(context.Background(), convID, claims.UserID, req.Content)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(msg)
+		})
+
+		mux.HandleFunc("/api/admin/stats", adminHandler.HandleGetStats)
+		mux.HandleFunc("/api/admin/reports", adminHandler.HandleGetReports)
+		mux.HandleFunc("/api/admin/transactions", adminHandler.HandleGetTransactions)
+		mux.HandleFunc("/api/admin/ban", adminHandler.HandleBanUser)
+		mux.HandleFunc("/api/admin/feature", adminHandler.HandleFeatureVideo)
+
+		mux.HandleFunc("/api/notifications", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+			if r.Method == "OPTIONS" {
+				return
+			}
+
+			authHeader := r.Header.Get("Authorization")
+			if len(authHeader) < 8 || authHeader[:7] != "Bearer " {
+				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				return
+			}
+			claims, err := tokenManager.Verify(authHeader[7:])
+			if err != nil {
+				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				return
+			}
+
+			alerts, err := srv.adminRepo.GetUserNotifications(context.Background(), claims.UserID)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(alerts)
+		})
+
+		mux.HandleFunc("/api/report", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+			if r.Method == "OPTIONS" {
+				return
+			}
+			authHeader := r.Header.Get("Authorization")
+			if len(authHeader) < 8 || authHeader[:7] != "Bearer " {
+				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				return
+			}
+			tokenStr := authHeader[7:]
+			claims, err := tokenManager.Verify(tokenStr)
+			if err != nil {
+				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				return
+			}
+
+			if r.Method == "POST" {
+				var req struct {
+					VideoID string `json:"video_id"`
+					Reason  string `json:"reason"`
+				}
+				if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+					http.Error(w, "Bad request", http.StatusBadRequest)
+					return
+				}
+				if err := srv.videoRepo.CreateReport(context.Background(), claims.UserID, req.VideoID, req.Reason); err != nil {
+					http.Error(w, err.Error(), http.StatusInternalServerError)
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(map[string]bool{"success": true})
+			}
+		})
+
+		mux.HandleFunc("/api/discover", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+			if r.Method == "OPTIONS" {
+				return
+			}
+
+			videos, err := srv.videoRepo.GetTrendingVideos(context.Background(), 20)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(videos)
+		})
+
+		mux.HandleFunc("/api/like", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+			if r.Method == "OPTIONS" {
+				return
+			}
+
+			authHeader := r.Header.Get("Authorization")
+			if len(authHeader) < 8 || authHeader[:7] != "Bearer " {
+				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				return
+			}
+			tokenStr := authHeader[7:]
+			claims, err := tokenManager.Verify(tokenStr)
+			if err != nil {
+				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				return
+			}
+
+			var req map[string]string
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				http.Error(w, "Bad request", http.StatusBadRequest)
+				return
+			}
+			videoID := req["video_id"]
+			if videoID == "" {
+				http.Error(w, "Missing video_id", http.StatusBadRequest)
+				return
+			}
+
+			isLiked, err := srv.videoRepo.ToggleLike(context.Background(), claims.UserID, videoID)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+
+			// Fire notification if liked (and if we can fetch creator ID, assume we can't easily here without another query, so skipping for simplicity or passing nil)
+			if isLiked {
+				// To fully implement we'd lookup video creator. For now, we'll keep it simple.
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "is_liked": isLiked})
+		})
+
+		mux.HandleFunc("/api/wallet/balance", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+			if r.Method == "OPTIONS" {
+				return
+			}
+			authHeader := r.Header.Get("Authorization")
+			if len(authHeader) < 8 || authHeader[:7] != "Bearer " {
+				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				return
+			}
+			tokenStr := authHeader[7:]
+			claims, err := tokenManager.Verify(tokenStr)
+			if err != nil {
+				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				return
+			}
+
+			balance, err := srv.userRepo.GetBalance(context.Background(), claims.UserID)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{"balance": balance})
+		})
+
+		mux.HandleFunc("/api/wallet/gift", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+			if r.Method == "OPTIONS" {
+				return
+			}
+			authHeader := r.Header.Get("Authorization")
+			if len(authHeader) < 8 || authHeader[:7] != "Bearer " {
+				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				return
+			}
+			tokenStr := authHeader[7:]
+			claims, err := tokenManager.Verify(tokenStr)
+			if err != nil {
+				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				return
+			}
+
+			var req struct {
+				ReceiverID string `json:"receiver_id"`
+				Amount     int64  `json:"amount"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				http.Error(w, "Bad request", http.StatusBadRequest)
+				return
+			}
+
+			err = srv.userRepo.SendGift(context.Background(), claims.UserID, req.ReceiverID, req.Amount)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+
+			// Fire Notification
+			_ = srv.adminRepo.CreateNotification(context.Background(), req.ReceiverID, claims.UserID, "gift", "Virtual Gift Received! 🎁", fmt.Sprintf("You received %d tokens.", req.Amount), nil)
+
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{"success": true})
+		})
+
+		// Expose Uploads directory natively so App.tsx can stream the local files directly!
+		mux.Handle("/uploads/", http.StripPrefix("/uploads/", http.FileServer(http.Dir("./uploads"))))
+
+		log.Printf("🌐 GIPJAZES V HTTP REST Backend running at :%s", appPort)
+		if err := http.ListenAndServe(":"+appPort, mux); err != nil {
+			log.Fatalf("HTTP server failed: %v", err)
+		}
+	}()
+
+	// --- 8. Start gRPC Server ---
+	log.Printf("🚀 GIPJAZES V gRPC Backend running at %v", lis.Addr())
+	if err := s.Serve(lis); err != nil {
+		log.Fatalf("failed to serve: %v", err)
+	}
+}

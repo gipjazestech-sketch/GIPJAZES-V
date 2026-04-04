@@ -1,0 +1,24 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: gipjazes_db
+    environment:
+      POSTGRES_USER: ${DB_USER:-gipjazes}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-jazes_pass_2026}
+      POSTGRES_DB: ${DB_NAME:-gipjazes_main}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  cache:
+    image: redis:7-alpine
+    container_name: gipjazes_redis
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+
+volumes:
+  postgres_data:

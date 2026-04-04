@@ -1,0 +1,30 @@
+services:
+  - type: web
+    name: gipjazes-backend
+    env: go
+    buildCommand: cd backend && go build -o main cmd/api/main.go
+    startCommand: ./backend/main
+    envVars:
+      - key: PORT
+        value: 8080
+      - key: DATABASE_URL
+        fromDatabase:
+          name: gipjazes-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          name: gipjazes-redis
+          type: redis
+          property: connectionString
+      - key: RAILWAY_PUBLIC_DOMAIN
+        value: gipjazes-backend.onrender.com
+
+databases:
+  - name: gipjazes-db
+    plan: free
+    postgresMajorVersion: 15
+
+redis:
+  - name: gipjazes-redis
+    plan: free
+    ipAllowList: [] # Only allow internal connections
