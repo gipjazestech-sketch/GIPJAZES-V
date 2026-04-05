@@ -15,6 +15,7 @@ import (
 
 	"cloud.google.com/go/storage"
 	_ "github.com/lib/pq"
+	"github.com/joho/godotenv"
 	"github.com/redis/go-redis/v9"
 
 	"github.com/gipjazes/backend/internal/api"
@@ -79,6 +80,9 @@ func (s *masterServer) AdminTakedown(ctx context.Context, req *pb.TakedownReques
 }
 
 func main() {
+	// Load environment variables from .env
+	godotenv.Load()
+
 	// 1. Load Config (Using Environment Variables for Cloud)
 	dbDSN := os.Getenv("DATABASE_URL")
 	if dbDSN == "" {
