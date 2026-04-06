@@ -727,7 +727,16 @@ function App() {
   return (
     <div className="app-container">
       <AnimatePresence>
-        {showSplash && <SplashScreen onComplete={() => setShowSplash(false)} />}
+        {showSplash && (
+          <SplashScreen 
+            onComplete={() => {
+              setShowSplash(false);
+              if (!sessionToken) {
+                setIsAuthModalOpen(true);
+              }
+            }} 
+          />
+        )}
       </AnimatePresence>
 
       <AnimatePresence>
