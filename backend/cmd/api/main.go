@@ -927,20 +927,7 @@ func main() {
 	}
 }
 func initDB(db *sql.DB) error {
-	// Check if users table exists
-	var exists bool
-	query := "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'users')"
-	err := db.QueryRow(query).Scan(&exists)
-	if err != nil {
-		return err
-	}
-
-	if exists {
-		log.Println("Database already initialized.")
-		return nil
-	}
-
-	log.Println("Initializing database schema...")
+	log.Println("Checking and initializing database schema...")
 	schema := `
 	CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
@@ -949,7 +936,7 @@ func initDB(db *sql.DB) error {
 		username VARCHAR(50) UNIQUE NOT NULL,
 		display_name VARCHAR(100) NOT NULL,
 		email VARCHAR(255) UNIQUE NOT NULL,
-		password_hash TEXT NOT NULL,
+		password_hash TEXT NOT NULL DEFAULT '',
 		balance BIGINT DEFAULT 0,
 		avatar_url TEXT,
 		is_verified BOOLEAN DEFAULT FALSE,
@@ -958,6 +945,14 @@ func initDB(db *sql.DB) error {
 		updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
 		deleted_at TIMESTAMP WITH TIME ZONE
 	);
+
+	DO $$ 
+	BEGIN
+		IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+					   WHERE table_name='users' AND column_name='password_hash') THEN
+			ALTER TABLE users ADD COLUMN password_hash TEXT NOT NULL DEFAULT '';
+		END IF;
+	END $$;
 
 	CREATE TABLE IF NOT EXISTS videos (
 		id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -1000,12 +995,12 @@ func initDB(db *sql.DB) error {
 	CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
 	`
 
-	_, err = db.Exec(schema)
+	_, err := db.Exec(schema)
 	if err != nil {
-		return err
+		return fmt.Errorf("database schema init failed: %v", err)
 	}
 
-	log.Println("Database schema initialized successfully!")
+	log.Println("Database schema checked and healthy!")
 	return nil
 }
 
