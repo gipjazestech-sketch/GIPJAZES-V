@@ -70,5 +70,55 @@ export const GIPJAZES_API = {
         } catch (error: any) {
             throw new Error(error.response?.data || error.message);
         }
+    },
+
+    getProfile: async (token: string, userId?: string) => {
+        try {
+            const response = await axios.get(`${REST_API_URL}/profile`, {
+                params: { user_id: userId },
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            return response.data;
+        } catch (error: any) {
+            throw new Error(error.response?.data || error.message);
+        }
+    },
+
+    getComments: async (videoId: string) => {
+        try {
+            const response = await axios.get(`${REST_API_URL}/comments`, {
+                params: { video_id: videoId }
+            });
+            return response.data;
+        } catch (error: any) {
+            throw new Error(error.response?.data || error.message);
+        }
+    },
+
+    createComment: async (token: string, videoId: string, content: string) => {
+        try {
+            const response = await axios.post(`${REST_API_URL}/comments`, {
+                video_id: videoId,
+                content: content
+            }, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            return response.data;
+        } catch (error: any) {
+            throw new Error(error.response?.data || error.message);
+        }
+    },
+
+    toggleLike: async (token: string, videoId: string) => {
+        try {
+            const response = await axios.post(`${REST_API_URL}/like`, {
+                video_id: videoId
+            }, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            return response.data;
+        } catch (error: any) {
+            throw new Error(error.response?.data || error.message);
+        }
     }
 };

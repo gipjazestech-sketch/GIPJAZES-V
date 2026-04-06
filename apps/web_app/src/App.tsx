@@ -329,7 +329,115 @@ const UploadModal = ({ isOpen, onClose, token }: { isOpen: boolean, onClose: () 
         >
           {selectedFile ? 'Start Upload' : 'Select File'}
         </motion.button>
+      </motion.div>
+    </div>
+  );
+};
 
+const CommentModal = ({ 
+  isOpen, 
+  onClose, 
+  videoId, 
+  token,
+  onCommentAdded
+}: { 
+  isOpen: boolean, 
+  onClose: () => void, 
+  videoId: string, 
+  token: string,
+  onCommentAdded: () => void
+}) => {
+  const [comments, setComments] = useState<any[]>([]);
+  const [newComment, setNewComment] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    if (isOpen && videoId) {
+      loadComments();
+    }
+  }, [isOpen, videoId]);
+
+  const loadComments = async () => {
+    try {
+      const data = await GIPJAZES_API.getComments(videoId.toString());
+      setComments(data || []);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleSubmit = async () => {
+    if (!token) {
+      alert("Login to comment!");
+      return;
+    }
+    if (!newComment.trim()) return;
+    
+    setIsLoading(true);
+    try {
+      await GIPJAZES_API.createComment(token, videoId.toString(), newComment);
+      setNewComment("");
+      await loadComments();
+      onCommentAdded();
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="modal-overlay" style={{ zIndex: 1000 }}>
+      <motion.div
+        initial={{ opacity: 0, y: 100 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: 100 }}
+        className="modal-content"
+        style={{ maxHeight: '70vh', borderRadius: '20px 20px 0 0', marginTop: 'auto', display: 'flex', flexDirection: 'column' }}
+      >
+        <button className="modal-close" onClick={onClose}><X size={28} /></button>
+        <h2 className="modal-title" style={{ fontSize: '1.4rem', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '15px' }}>
+          Comments ({comments.length})
+        </h2>
+
+        <div style={{ flex: 1, overflowY: 'auto', padding: '20px 0', display: 'flex', flexDirection: 'column', gap: '20px', minHeight: '30vh' }}>
+          {comments.length === 0 ? (
+            <p style={{ textAlign: 'center', color: 'var(--text-muted)', marginTop: '40px' }}>No comments yet. Be the first!</p>
+          ) : (
+            comments.map((c, i) => (
+              <div key={i} style={{ display: 'flex', gap: '12px' }}>
+                <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(255,225,255,0.1)', flexShrink: 0 }} />
+                <div>
+                  <p style={{ fontSize: '0.85rem', color: 'var(--brand-primary)', marginBottom: '4px' }}>@{c.user_id?.substring(0, 8) || 'user'}</p>
+                  <p style={{ fontSize: '0.95rem', color: 'white', lineHeight: 1.4 }}>{c.content}</p>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+
+        <div style={{ borderTop: '1px solid rgba(255,255,255,0.05)', padding: '20px 0 10px', display: 'flex', gap: '12px' }}>
+          <input
+            type="text"
+            className="form-input"
+            style={{ borderRadius: '12px', flex: 1 }}
+            placeholder="Add a comment..."
+            value={newComment}
+            onChange={(e) => setNewComment(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
+          />
+          <motion.button
+            whileTap={{ scale: 0.9 }}
+            className="upload-button"
+            style={{ width: 'auto', padding: '0 20px', borderRadius: '12px', height: '52px' }}
+            onClick={handleSubmit}
+            disabled={isLoading}
+          >
+            Post
+          </motion.button>
+        </div>
       </motion.div>
     </div>
   );
@@ -346,7 +454,7 @@ interface VideoData {
   shares: number;
 }
 
-const VideoPost = ({ data }: { data: VideoData }) => {
+const VideoPost = ({ data, token }: { data: VideoData, token: string }) => {
   const ref = useRef<HTMLDivElement>(null);
   const isInView = useInView(ref, { amount: 0.6 });
   const [isPlaying, setIsPlaying] = useState(false);
@@ -357,6 +465,7 @@ const VideoPost = ({ data }: { data: VideoData }) => {
   const [isFollowing, setIsFollowing] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
   const [showHeart, setShowHeart] = useState(false);
+  const [isCommentModalOpen, setIsCommentModalOpen] = useState(false);
 
   const [commentCount, setCommentCount] = useState(data.comments);
   const [shareCount, setShareCount] = useState(data.shares);
@@ -367,15 +476,20 @@ const VideoPost = ({ data }: { data: VideoData }) => {
     return num.toString();
   };
 
-  if (videoRef.current) {
-    if (isInView && !isPlaying) {
-      videoRef.current.play().catch(() => console.log("Autoplay blocked"));
-      setIsPlaying(true);
-    } else if (!isInView && isPlaying) {
-      videoRef.current.pause();
-      setIsPlaying(false);
+  useEffect(() => {
+    if (videoRef.current) {
+      if (isInView) {
+        videoRef.current.play().catch(() => {
+          console.log("Autoplay blocked");
+          setIsPlaying(false);
+        });
+        setIsPlaying(true);
+      } else {
+        videoRef.current.pause();
+        setIsPlaying(false);
+      }
     }
-  }
+  }, [isInView]);
 
   const togglePlay = () => {
     if (videoRef.current) {
@@ -388,28 +502,40 @@ const VideoPost = ({ data }: { data: VideoData }) => {
     }
   };
 
-  const handleLike = () => {
+  const handleLike = async () => {
+    if (!token) {
+      alert("Login to like!");
+      return;
+    }
+    const wasLiked = isLiked;
     setIsLiked(!isLiked);
-    setLikeCount(isLiked ? likeCount - 1 : likeCount + 1);
+    setLikeCount(wasLiked ? likeCount - 1 : likeCount + 1);
+    
+    try {
+      await GIPJAZES_API.toggleLike(token, data.id.toString());
+    } catch (e) {
+      // Revert if failed
+      setIsLiked(wasLiked);
+      setLikeCount(likeCount);
+    }
   };
 
   const handleDoubleTap = () => {
     if (!isLiked) {
-      setIsLiked(true);
-      setLikeCount(likeCount + 1);
+      handleLike();
     }
     setShowHeart(true);
     setTimeout(() => setShowHeart(false), 800);
   };
 
   const handleComment = () => {
-    setCommentCount(commentCount + 1);
-    alert("Comment Panel Simulation: Opened!");
+    setIsCommentModalOpen(true);
   };
 
   const handleShare = () => {
     setShareCount(shareCount + 1);
-    alert("Share Simulation: Link copied to clipboard!");
+    navigator.clipboard.writeText(window.location.origin + "?video=" + data.id);
+    alert("Share: Link copied to clipboard!");
   };
 
   return (
@@ -428,6 +554,7 @@ const VideoPost = ({ data }: { data: VideoData }) => {
           onClick={togglePlay}
           onDoubleClick={handleDoubleTap}
           loop
+          playsInline
           muted={false}
         />
 
@@ -547,6 +674,14 @@ const VideoPost = ({ data }: { data: VideoData }) => {
           </motion.button>
         </div>
       </motion.div>
+
+      <CommentModal 
+        isOpen={isCommentModalOpen} 
+        onClose={() => setIsCommentModalOpen(false)} 
+        videoId={data.id.toString()} 
+        token={token}
+        onCommentAdded={() => setCommentCount(commentCount + 1)}
+      />
     </div>
   );
 };
@@ -633,6 +768,97 @@ const ExploreContent = () => {
   );
 };
 
+const ProfileContent = ({ token }: { token: string }) => {
+  const [profileData, setProfileData] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchProfile = async () => {
+      if (!token) return;
+      try {
+        const data = await GIPJAZES_API.getProfile(token);
+        setProfileData(data);
+      } catch (e) {
+        console.error(e);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    fetchProfile();
+  }, [token]);
+
+  if (isLoading) return <div className="loader" style={{ margin: '100px auto' }} />;
+  
+  if (!profileData) return (
+    <div style={{ color: 'white', textAlign: 'center', marginTop: '100px' }}>
+      <User size={64} color="var(--brand-secondary)" style={{ margin: '0 auto 20px', display: 'block' }} />
+      <h2 style={{ fontSize: '2.5rem', marginBottom: '15px' }}>GIPJAZES Profile</h2>
+      <p style={{ color: 'var(--text-muted)', fontSize: '1.2rem' }}>Sign in to view your uploaded videos, likes, and followers.</p>
+    </div>
+  );
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      className="profile-tab-content"
+      style={{ color: 'white', padding: '10vh 5%', width: '100%', maxWidth: '800px', margin: '0 auto' }}
+    >
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: '40px' }}>
+        <div style={{ width: '100px', height: '100px', borderRadius: '50%', background: 'linear-gradient(45deg, var(--brand-primary), var(--brand-secondary))', marginBottom: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '2.5rem', fontWeight: 800 }}>
+          {profileData.user?.username?.[0]?.toUpperCase()}
+        </div>
+        <h2 style={{ fontSize: '2rem', marginBottom: '4px' }}>@{profileData.user?.username}</h2>
+        <p style={{ color: 'var(--text-muted)', marginBottom: '20px' }}>{profileData.user?.display_name}</p>
+        
+        <div style={{ display: 'flex', gap: '30px', marginBottom: '30px' }}>
+          <div style={{ textAlign: 'center' }}>
+            <p style={{ fontWeight: 800, fontSize: '1.2rem' }}>{profileData.following || 0}</p>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Following</p>
+          </div>
+          <div style={{ textAlign: 'center' }}>
+            <p style={{ fontWeight: 800, fontSize: '1.2rem' }}>{profileData.followers || 0}</p>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Followers</p>
+          </div>
+          <div style={{ textAlign: 'center' }}>
+            <p style={{ fontWeight: 800, fontSize: '1.2rem' }}>{profileData.videos?.length || 0}</p>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Videos</p>
+          </div>
+        </div>
+
+        <p style={{ textAlign: 'center', maxWidth: '500px', lineHeight: 1.6, color: 'rgba(255,255,255,0.8)' }}>
+          {profileData.user?.bio || "No bio yet. Welcome to my GIPJAZES V profile!"}
+        </p>
+      </div>
+
+      <div style={{ borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '30px' }}>
+        <div style={{ display: 'flex', gap: '30px', marginBottom: '30px', justifyContent: 'center', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+          <p style={{ paddingBottom: '10px', borderBottom: '2px solid white', fontWeight: 600 }}>Videos</p>
+          <p style={{ color: 'rgba(255,255,255,0.4)', paddingBottom: '10px' }}>Liked</p>
+        </div>
+
+        {profileData.videos?.length > 0 ? (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '4px' }}>
+            {profileData.videos.map((vid: any) => (
+              <div key={vid.id} style={{ aspectRatio: '9/16', background: '#000', borderRadius: '4px', overflow: 'hidden', position: 'relative', cursor: 'pointer' }}>
+                <video src={vid.url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                <div style={{ position: 'absolute', bottom: '8px', left: '8px', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem' }}>
+                  <Play size={12} fill="white" /> {vid.view_count || 0}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div style={{ textAlign: 'center', padding: '60px 0', color: 'var(--text-muted)' }}>
+            <Video size={48} style={{ margin: '0 auto 15px', opacity: 0.2 }} />
+            <p>You haven't uploaded any videos yet.</p>
+          </div>
+        )}
+      </div>
+    </motion.div>
+  );
+};
+
 function App() {
   const [showSplash, setShowSplash] = useState(true);
   const [activeTab, setActiveTab] = useState('For You');
@@ -687,7 +913,7 @@ function App() {
     switch (activeTab) {
       case 'For You':
         return videoFeed.map((post) => (
-          <VideoPost key={post.id} data={post} />
+          <VideoPost key={post.id} data={post} token={sessionToken} />
         ));
       case 'Explore':
         return (
@@ -700,7 +926,7 @@ function App() {
       case 'Travel':
       case 'Food':
         return videoFeed.map((post) => (
-          <VideoPost key={post.id} data={post} />
+          <VideoPost key={post.id} data={post} token={sessionToken} />
         ));
       case 'Live':
         return (
@@ -712,12 +938,7 @@ function App() {
         );
       case 'Profile':
         return (
-          <motion.div initial={{ opacity: 0, x: 50 }} animate={{ opacity: 1, x: 0 }} style={{ color: 'white', marginTop: '20vh', textAlign: 'center', width: '100%' }}>
-            <User size={64} color="var(--brand-secondary)" style={{ margin: '0 auto 20px', display: 'block' }} />
-            <h2 style={{ fontSize: '2.5rem', marginBottom: '15px' }}>GIPJAZES Profile</h2>
-            <p style={{ color: 'var(--text-muted)', fontSize: '1.2rem' }}>Sign in to view your uploaded videos, likes, and followers.</p>
-            <button className="upload-button" onClick={() => setIsAuthModalOpen(true)} style={{ margin: '40px auto 0', padding: '12px 30px' }}>Login / Register</button>
-          </motion.div>
+          <ProfileContent token={sessionToken} />
         );
       default:
         return null;

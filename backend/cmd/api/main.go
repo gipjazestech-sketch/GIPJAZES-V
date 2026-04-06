@@ -912,7 +912,12 @@ func main() {
 		})
 
 		// Expose Uploads directory natively so App.tsx can stream the local files directly!
-		mux.Handle("/uploads/", http.StripPrefix("/uploads/", http.FileServer(http.Dir("./uploads"))))
+		// Expose Uploads directory with CORS so the frontend (Vercel) can stream videos from the backend (Render)
+		mux.Handle("/uploads/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+			http.StripPrefix("/uploads/", http.FileServer(http.Dir("./uploads"))).ServeHTTP(w, r)
+		}))
 
 		log.Printf("🌐 GIPJAZES V HTTP REST Backend running at :%s", appPort)
 		if err := http.ListenAndServe(":"+appPort, mux); err != nil {
@@ -991,8 +996,25 @@ func initDB(db *sql.DB) error {
 		created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 	);
 
+	CREATE TABLE IF NOT EXISTS comments (
+		id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+		video_id UUID NOT NULL REFERENCES videos(id) ON DELETE CASCADE,
+		user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+		content TEXT NOT NULL,
+		created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+	);
+
+	CREATE TABLE IF NOT EXISTS reports (
+		id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+		reporter_id UUID NOT NULL REFERENCES users(id),
+		video_id UUID NOT NULL REFERENCES videos(id) ON DELETE CASCADE,
+		reason TEXT NOT NULL,
+		created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+	);
+
 	CREATE INDEX IF NOT EXISTS idx_videos_creator_id ON videos(creator_id);
 	CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
+	CREATE INDEX IF NOT EXISTS idx_comments_video_id ON comments(video_id);
 	`
 
 	_, err := db.Exec(schema)
