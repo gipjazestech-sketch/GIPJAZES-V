@@ -73,11 +73,17 @@ h4,
   }
 }
 
-.mobile-menu-btn {
+.mobile-header-actions {
   position: fixed;
   top: 20px;
   left: 20px;
   z-index: 40;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.mobile-action-btn {
   background: rgba(20, 10, 40, 0.7);
   border: 1px solid rgba(255, 0, 229, 0.3);
   color: white;
@@ -89,10 +95,21 @@ h4,
   align-items: center;
   justify-content: center;
   box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.mobile-action-btn:hover {
+  background: rgba(255, 0, 229, 0.1);
+  border-color: var(--brand-primary);
+  transform: translateY(-2px);
+}
+
+.mobile-action-btn:active {
+  transform: scale(0.95);
 }
 
 @media (min-width: 768px) {
-  .mobile-menu-btn {
+  .mobile-header-actions {
     display: none;
   }
 }
@@ -535,4 +552,51 @@ h4,
 .upload-area.drag-over {
   border-color: var(--brand-primary);
   background: rgba(0, 229, 255, 0.05);
+}
+
+/* Splash Screen */
+.splash-screen {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: var(--bg-dark);
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+}
+
+.splash-logo-container {
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.splash-logo {
+  width: 220px;
+  height: 220px;
+  margin-bottom: 30px;
+  border-radius: 40px;
+  box-shadow: 0 0 60px rgba(255, 0, 229, 0.3);
+  object-fit: cover;
+}
+
+.splash-title {
+  font-size: 3.2rem;
+  font-weight: 800;
+  margin-bottom: 12px;
+  letter-spacing: 2px;
+  color: white;
+  text-shadow: 0 0 20px rgba(255, 0, 229, 0.5);
+}
+
+.splash-tagline {
+  font-size: 1.2rem;
+  color: var(--text-muted);
+  font-weight: 500;
+  letter-spacing: 1px;
 }

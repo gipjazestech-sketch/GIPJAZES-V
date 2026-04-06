@@ -3,10 +3,46 @@ import { motion, useInView, AnimatePresence } from 'framer-motion';
 import { Heart, MessageCircle, Share2, Compass, Home, User, Video, PlusSquare, Music, Play, Bookmark, X, Mail, Lock, UploadCloud, Film, Key, Search, Menu } from 'lucide-react';
 import { GIPJAZES_API } from './lib/api';
 import './index.css';
+import logo from './assets/logo.png';
 
 const categories = ["Comedy", "Music", "Gaming", "Tech", "Travel", "Food"];
 
 // Removed mockFeed in favor of live DB connection
+
+const SplashScreen = ({ onComplete }: { onComplete: () => void }) => {
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      onComplete();
+    }, 2500);
+    return () => clearTimeout(timer);
+  }, [onComplete]);
+
+  return (
+    <motion.div
+      initial={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 1 }}
+      className="splash-screen"
+    >
+      <motion.div
+        initial={{ scale: 0.8, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        transition={{ duration: 0.8, ease: "easeOut" }}
+        className="splash-logo-container"
+      >
+        <img src={logo} alt="GIPJAZES Logo" className="splash-logo" />
+        <motion.div
+          initial={{ y: 20, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          transition={{ delay: 0.5, duration: 0.8 }}
+        >
+          <h1 className="splash-title">GIPJAZES V</h1>
+          <p className="splash-tagline">Short Videos. Big Fun. Share & Connect</p>
+        </motion.div>
+      </motion.div>
+    </motion.div>
+  );
+};
 
 const Sidebar = ({
   activeTab,
@@ -42,9 +78,12 @@ const Sidebar = ({
       transition={{ type: "spring", stiffness: 300, damping: 30 }}
       className="sidebar"
     >
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '50px' }}>
-        <div className="brand-text" style={{ fontSize: '1.8rem', fontWeight: 800, color: 'var(--text-main)', letterSpacing: '1px' }}>
-          GIPJAZES<span style={{ color: 'var(--brand-primary)' }}>.V</span>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '40px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <img src={logo} alt="Logo" style={{ width: '45px', height: '45px', borderRadius: '12px' }} />
+          <div className="brand-text" style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-main)', letterSpacing: '0.5px' }}>
+            GIPJAZES<span style={{ color: 'var(--brand-primary)' }}>.V</span>
+          </div>
         </div>
         <button className="close-sidebar-btn" onClick={() => setIsOpen(false)}>
           <X size={24} />
@@ -595,6 +634,7 @@ const ExploreContent = () => {
 };
 
 function App() {
+  const [showSplash, setShowSplash] = useState(true);
   const [activeTab, setActiveTab] = useState('For You');
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
@@ -687,6 +727,10 @@ function App() {
   return (
     <div className="app-container">
       <AnimatePresence>
+        {showSplash && <SplashScreen onComplete={() => setShowSplash(false)} />}
+      </AnimatePresence>
+
+      <AnimatePresence>
         {isAuthModalOpen && <AuthModal isOpen={isAuthModalOpen} onClose={() => setIsAuthModalOpen(false)} onSuccess={handleAuthSuccess} />}
         {isUploadModalOpen && <UploadModal isOpen={isUploadModalOpen} onClose={() => setIsUploadModalOpen(false)} token={sessionToken} />}
       </AnimatePresence>
@@ -700,9 +744,17 @@ function App() {
       />
       <div className="main-feed" style={{ display: activeTab === 'For You' ? 'flex' : 'block' }}>
         {!isSidebarOpen && (
-          <button className="mobile-menu-btn" onClick={() => setIsSidebarOpen(true)}>
-            <Menu size={24} />
-          </button>
+          <div className="mobile-header-actions">
+            <button className="mobile-action-btn" onClick={() => setIsSidebarOpen(true)}>
+              <Menu size={24} />
+            </button>
+            <button className="mobile-action-btn" onClick={() => setActiveTab('Explore')}>
+              <Search size={22} />
+            </button>
+            <button className="mobile-action-btn" style={{ borderColor: 'var(--brand-accent)' }} onClick={() => setIsUploadModalOpen(true)}>
+              <PlusSquare size={22} color="var(--brand-accent)" />
+            </button>
+          </div>
         )}
         {renderContent()}
       </div>
