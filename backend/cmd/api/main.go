@@ -113,6 +113,12 @@ func main() {
 	}
 	defer db.Close()
 
+	// Initializing Database Schema (Auto-Migrations for Render/Railway)
+	err = initDB(db)
+	if err != nil {
+		log.Printf("DB Initialization Warning: %v", err)
+	}
+
 	// 3. Initialize Redis
 	rdb := redis.NewClient(&redis.Options{Addr: redisAddr})
 	defer rdb.Close()
@@ -919,4 +925,90 @@ func main() {
 	if err := s.Serve(lis); err != nil {
 		log.Fatalf("failed to serve: %v", err)
 	}
+}
+func initDB(db *sql.DB) error {
+	// Check if users table exists
+	var exists bool
+	query := "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'users')"
+	err := db.QueryRow(query).Scan(&exists)
+	if err != nil {
+		return err
+	}
+
+	if exists {
+		log.Println("Database already initialized.")
+		return nil
+	}
+
+	log.Println("Initializing database schema...")
+	schema := `
+	CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+	CREATE TABLE IF NOT EXISTS users (
+		id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+		username VARCHAR(50) UNIQUE NOT NULL,
+		display_name VARCHAR(100) NOT NULL,
+		email VARCHAR(255) UNIQUE NOT NULL,
+		password_hash TEXT NOT NULL,
+		balance BIGINT DEFAULT 0,
+		avatar_url TEXT,
+		is_verified BOOLEAN DEFAULT FALSE,
+		bio TEXT,
+		created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+		updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+		deleted_at TIMESTAMP WITH TIME ZONE
+	);
+
+	CREATE TABLE IF NOT EXISTS videos (
+		id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+		creator_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+		video_url TEXT NOT NULL,
+		thumbnail_url TEXT,
+		description TEXT,
+		category VARCHAR(50),
+		like_count INTEGER DEFAULT 0,
+		share_count INTEGER DEFAULT 0,
+		comment_count INTEGER DEFAULT 0,
+		view_count INTEGER DEFAULT 0,
+		created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+		deleted_at TIMESTAMP WITH TIME ZONE
+	);
+
+	CREATE TABLE IF NOT EXISTS follows (
+		follower_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+		following_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+		created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+		PRIMARY KEY (follower_id, following_id)
+	);
+
+	CREATE TABLE IF NOT EXISTS likes (
+		user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+		video_id UUID NOT NULL REFERENCES videos(id) ON DELETE CASCADE,
+		created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+		PRIMARY KEY (user_id, video_id)
+	);
+
+	CREATE TABLE IF NOT EXISTS messages (
+		id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+		conversation_id UUID NOT NULL,
+		sender_id UUID NOT NULL REFERENCES users(id),
+		content TEXT NOT NULL,
+		created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_videos_creator_id ON videos(creator_id);
+	CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
+	`
+
+	_, err = db.Exec(schema)
+	if err != nil {
+		return err
+	}
+
+	log.Println("Database schema initialized successfully!")
+	return nil
+}
+
+func main_dummy() {
+	// this is just to keep the file structure if needed, but not used
 }
