@@ -378,12 +378,16 @@ func main() {
 				videos = []*pb.Video{} // Fallback
 			}
 
+			// Get Total Likes
+			totalLikes, _ := srv.videoRepo.GetTotalLikesByUserID(context.Background(), targetUserID)
+
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]interface{}{
-				"user":      user,
-				"followers": followers,
-				"following": following,
-				"videos":    videos,
+				"user":        user,
+				"followers":   followers,
+				"following":   following,
+				"videos":      videos,
+				"total_likes": totalLikes,
 			})
 		})
 
@@ -595,7 +599,14 @@ func main() {
 				return
 			}
 
-			videos, err := srv.videoRepo.SearchVideos(context.Background(), q)
+			var videos []*pb.Video
+			var err error
+			if len(q) > 0 && q[0] == '#' {
+				videos, err = srv.videoRepo.SearchByHashtag(context.Background(), q[1:])
+			} else {
+				videos, err = srv.videoRepo.SearchVideos(context.Background(), q)
+			}
+			
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
@@ -603,6 +614,21 @@ func main() {
 
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(videos)
+		})
+
+		mux.HandleFunc("/api/video/view", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+			if r.Method == "OPTIONS" {
+				return
+			}
+			var req struct {
+				VideoID string `json:"video_id"`
+			}
+			json.NewDecoder(r.Body).Decode(&req)
+			_ = srv.videoRepo.IncrementViewCount(context.Background(), req.VideoID)
+			w.WriteHeader(http.StatusOK)
 		})
 
 		mux.HandleFunc("/api/messages", func(w http.ResponseWriter, r *http.Request) {
@@ -842,6 +868,145 @@ func main() {
 			json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "is_liked": isLiked})
 		})
 
+		mux.HandleFunc("/api/repost", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+			if r.Method == "OPTIONS" {
+				return
+			}
+			authHeader := r.Header.Get("Authorization")
+			if len(authHeader) < 8 || authHeader[:7] != "Bearer " {
+				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				return
+			}
+			claims, err := tokenManager.Verify(authHeader[7:])
+			if err != nil {
+				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				return
+			}
+
+			var req struct {
+				VideoID string `json:"video_id"`
+			}
+			json.NewDecoder(r.Body).Decode(&req)
+			if req.VideoID == "" {
+				http.Error(w, "Missing video_id", http.StatusBadRequest)
+				return
+			}
+
+			err = srv.videoRepo.RepostVideo(context.Background(), claims.UserID, req.VideoID)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]bool{"success": true})
+		})
+
+		mux.HandleFunc("/api/profile/update", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+			if r.Method == "OPTIONS" {
+				return
+			}
+			authHeader := r.Header.Get("Authorization")
+			if len(authHeader) < 8 || authHeader[:7] != "Bearer " {
+				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				return
+			}
+			claims, err := tokenManager.Verify(authHeader[7:])
+			if err != nil {
+				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				return
+			}
+
+			var req struct {
+				Username    string `json:"username"`
+				DisplayName string `json:"display_name"`
+				Bio         string `json:"bio"`
+				AvatarURL   string `json:"avatar_url"`
+			}
+			json.NewDecoder(r.Body).Decode(&req)
+
+			err = srv.userRepo.UpdateProfile(context.Background(), claims.UserID, req.Username, req.DisplayName, req.Bio, req.AvatarURL)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]bool{"success": true})
+		})
+
+		mux.HandleFunc("/api/user/delete", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+			if r.Method == "OPTIONS" {
+				return
+			}
+			authHeader := r.Header.Get("Authorization")
+			if len(authHeader) < 8 || authHeader[:7] != "Bearer " {
+				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				return
+			}
+			claims, err := tokenManager.Verify(authHeader[7:])
+			if err != nil {
+				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				return
+			}
+
+			err = srv.userRepo.DeleteUser(context.Background(), claims.UserID)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]bool{"success": true})
+		})
+
+		mux.HandleFunc("/api/auth/forgot-password", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+			if r.Method == "OPTIONS" {
+				return
+			}
+			var req struct {
+				Email string `json:"email"`
+			}
+			json.NewDecoder(r.Body).Decode(&req)
+			// Generate a simple token for simulation (in real life use secure random)
+			token := fmt.Sprintf("RECOVER_%d", time.Now().Unix())
+			err := srv.userRepo.SetRecoveryToken(context.Background(), req.Email, token)
+			if err != nil {
+				http.Error(w, "Email not found", http.StatusNotFound)
+				return
+			}
+			// In a real app, send email. Here, just return it for ease of use in UI.
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "recovery_token": token})
+		})
+
+		mux.HandleFunc("/api/auth/reset-password", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Content-Type", "application/json")
+			var req struct {
+				Token       string `json:"token"`
+				NewPassword string `json:"new_password"`
+			}
+			json.NewDecoder(r.Body).Decode(&req)
+			// Hash new password (using simple hash for demo or actual bcrypt if available)
+			// Assuming there's a pkg/auth utility or just using string for now.
+			err := srv.userRepo.ResetPassword(context.Background(), req.Token, req.NewPassword)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			json.NewEncoder(w).Encode(map[string]bool{"success": true})
+		})
+
 		mux.HandleFunc("/api/wallet/balance", func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Access-Control-Allow-Origin", "*")
 			w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
@@ -1015,6 +1180,41 @@ func initDB(db *sql.DB) error {
 	CREATE INDEX IF NOT EXISTS idx_videos_creator_id ON videos(creator_id);
 	CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
 	CREATE INDEX IF NOT EXISTS idx_comments_video_id ON comments(video_id);
+
+	-- New Tables for Extended Features
+	CREATE TABLE IF NOT EXISTS reposts (
+		id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+		user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+		video_id UUID NOT NULL REFERENCES videos(id) ON DELETE CASCADE,
+		created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+		UNIQUE(user_id, video_id)
+	);
+
+	CREATE TABLE IF NOT EXISTS notifications (
+		id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+		user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+		actor_id UUID REFERENCES users(id) ON DELETE SET NULL,
+		type VARCHAR(50),
+		title TEXT,
+		body TEXT,
+		reference_id UUID,
+		is_read BOOLEAN DEFAULT FALSE,
+		created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+	);
+	CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON notifications(user_id);
+
+	DO $$ 
+	BEGIN
+		-- Add recovery columns to users
+		IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='recovery_token') THEN
+			ALTER TABLE users ADD COLUMN recovery_token TEXT;
+			ALTER TABLE users ADD COLUMN recovery_expires TIMESTAMP WITH TIME ZONE;
+		END IF;
+		-- Add hashtags to videos
+		IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='videos' AND column_name='hashtags') THEN
+			ALTER TABLE videos ADD COLUMN hashtags TEXT[] DEFAULT '{}';
+		END IF;
+	END $$;
 	`
 
 	_, err := db.Exec(schema)

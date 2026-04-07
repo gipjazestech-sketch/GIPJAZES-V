@@ -177,3 +177,42 @@ func (r *PostgresUserRepository) SendGift(ctx context.Context, senderID, receive
 
 	return tx.Commit()
 }
+
+func (r *PostgresUserRepository) UpdateProfile(ctx context.Context, userID, username, displayName, bio, avatarURL string) error {
+	query := `
+		UPDATE users 
+		SET username = $2, display_name = $3, bio = $4, avatar_url = $5, updated_at = CURRENT_TIMESTAMP
+		WHERE id = $1
+	`
+	_, err := r.db.ExecContext(ctx, query, userID, username, displayName, bio, avatarURL)
+	return err
+}
+
+func (r *PostgresUserRepository) DeleteUser(ctx context.Context, userID string) error {
+	query := `UPDATE users SET deleted_at = CURRENT_TIMESTAMP WHERE id = $1`
+	_, err := r.db.ExecContext(ctx, query, userID)
+	return err
+}
+
+func (r *PostgresUserRepository) SetRecoveryToken(ctx context.Context, email, token string) error {
+	query := `UPDATE users SET recovery_token = $1, recovery_expires = CURRENT_TIMESTAMP + INTERVAL '1 hour' WHERE email = $2`
+	_, err := r.db.ExecContext(ctx, query, token, email)
+	return err
+}
+
+func (r *PostgresUserRepository) ResetPassword(ctx context.Context, token, newPasswordHash string) error {
+	query := `
+		UPDATE users 
+		SET password_hash = $1, recovery_token = NULL, recovery_expires = NULL 
+		WHERE recovery_token = $2 AND recovery_expires > CURRENT_TIMESTAMP
+	`
+	res, err := r.db.ExecContext(ctx, query, newPasswordHash, token)
+	if err != nil {
+		return err
+	}
+	rows, _ := res.RowsAffected()
+	if rows == 0 {
+		return fmt.Errorf("invalid or expired token")
+	}
+	return nil
+}

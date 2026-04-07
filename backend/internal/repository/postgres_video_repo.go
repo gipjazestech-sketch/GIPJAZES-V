@@ -315,6 +315,7 @@ func (r *PostgresVideoRepository) CreateReport(ctx context.Context, reporterID, 
 }
 
 func (r *PostgresVideoRepository) GetTrendingVideos(ctx context.Context, limit int) ([]*pb.Video, error) {
+	// Trending Score: (Likes + Comments * 2 + Shares * 5) / (Hours_Passed + 1)^1.5
 	query := `
 		SELECT v.id, v.creator_id, v.video_url, v.thumbnail_url, v.description, 
 		       v.like_count, v.share_count, v.comment_count, v.created_at,
@@ -322,7 +323,7 @@ func (r *PostgresVideoRepository) GetTrendingVideos(ctx context.Context, limit i
 		FROM videos v
 		JOIN users u ON v.creator_id = u.id
 		WHERE v.deleted_at IS NULL
-		ORDER BY v.like_count DESC, v.created_at DESC
+		ORDER BY (v.like_count + v.comment_count * 2 + v.share_count * 5) / POW(EXTRACT(EPOCH FROM (NOW() - v.created_at))/3600 + 1, 1.5) DESC
 		LIMIT $1
 	`
 	rows, err := r.db.QueryContext(ctx, query, limit)
@@ -343,6 +344,59 @@ func (r *PostgresVideoRepository) GetTrendingVideos(ctx context.Context, limit i
 		if err != nil {
 			return nil, err
 		}
+		if createdAt.Valid {
+			video.CreatedAt = timestamppb.New(createdAt.Time)
+		}
+		videos = append(videos, video)
+	}
+	return videos, nil
+}
+
+func (r *PostgresVideoRepository) GetTotalLikesByUserID(ctx context.Context, userID string) (int, error) {
+	var count int
+	query := `SELECT COALESCE(SUM(like_count), 0) FROM videos WHERE creator_id = $1 AND deleted_at IS NULL`
+	err := r.db.QueryRowContext(ctx, query, userID).Scan(&count)
+	return count, err
+}
+
+func (r *PostgresVideoRepository) RepostVideo(ctx context.Context, userID, videoID string) error {
+	query := `INSERT INTO reposts (user_id, video_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`
+	_, err := r.db.ExecContext(ctx, query, userID, videoID)
+	return err
+}
+
+func (r *PostgresVideoRepository) IncrementViewCount(ctx context.Context, id string) error {
+	query := `UPDATE videos SET view_count = view_count + 1 WHERE id = $1`
+	_, err := r.db.ExecContext(ctx, query, id)
+	return err
+}
+
+func (r *PostgresVideoRepository) SearchByHashtag(ctx context.Context, hashtag string) ([]*pb.Video, error) {
+	query := `
+		SELECT v.id, v.creator_id, v.video_url, v.thumbnail_url, v.description, 
+		       v.like_count, v.share_count, v.comment_count, v.created_at,
+		       u.username, u.display_name, u.avatar_url, u.is_verified
+		FROM videos v
+		JOIN users u ON v.creator_id = u.id
+		WHERE $1 = ANY(v.hashtags) AND v.deleted_at IS NULL
+		ORDER BY v.like_count DESC
+		LIMIT 20
+	`
+	rows, err := r.db.QueryContext(ctx, query, hashtag)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var videos []*pb.Video
+	for rows.Next() {
+		video := &pb.Video{Creator: &pb.User{}}
+		var createdAt sql.NullTime
+		rows.Scan(
+			&video.Id, &video.CreatorId, &video.VideoUrl, &video.ThumbnailUrl, &video.Description,
+			&video.LikeCount, &video.ShareCount, &video.CommentCount, &createdAt,
+			&video.Creator.Username, &video.Creator.DisplayName, &video.Creator.AvatarUrl, &video.Creator.IsVerified,
+		)
 		if createdAt.Valid {
 			video.CreatedAt = timestamppb.New(createdAt.Time)
 		}

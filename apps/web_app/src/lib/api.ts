@@ -120,5 +120,78 @@ export const GIPJAZES_API = {
         } catch (error: any) {
             throw new Error(error.response?.data || error.message);
         }
+    },
+    repost: async (token: string, videoId: string) => {
+        try {
+            const response = await axios.post(`${REST_API_URL}/repost`, {
+                video_id: videoId
+            }, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            return response.data;
+        } catch (error: any) {
+            throw new Error(error.response?.data || error.message);
+        }
+    },
+    updateProfile: async (token: string, data: { username?: string, display_name?: string, bio?: string, avatar_url?: string }) => {
+        try {
+            const response = await axios.post(`${REST_API_URL}/profile/update`, data, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            return response.data;
+        } catch (error: any) {
+            throw new Error(error.response?.data || error.message);
+        }
+    },
+    deleteAccount: async (token: string) => {
+        try {
+            const response = await axios.post(`${REST_API_URL}/user/delete`, {}, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            return response.data;
+        } catch (error: any) {
+            throw new Error(error.response?.data || error.message);
+        }
+    },
+    forgotPassword: async (email: string) => {
+        try {
+            const response = await axios.post(`${REST_API_URL}/auth/forgot-password`, { email });
+            return response.data;
+        } catch (error: any) {
+            throw new Error(error.response?.data || error.message);
+        }
+    },
+    resetPassword: async (token: string, newPassword: string) => {
+        try {
+            const response = await axios.post(`${REST_API_URL}/auth/reset-password`, { token, new_password: newPassword });
+            return response.data;
+        } catch (error: any) {
+            throw new Error(error.response?.data || error.message);
+        }
+    },
+    incrementView: async (videoId: string) => {
+        try {
+            await axios.post(`${REST_API_URL}/video/view`, { video_id: videoId });
+        } catch (e) {}
+    },
+    sendGift: async (token: string, receiverId: string, amount: number) => {
+        try {
+            const response = await axios.post(`${REST_API_URL}/wallet/gift`, { receiver_id: receiverId, amount }, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            return response.data;
+        } catch (error: any) {
+            throw new Error(error.response?.data || error.message);
+        }
+    },
+    getNotifications: async (token: string) => {
+        try {
+            const response = await axios.get(`${REST_API_URL}/notifications`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            return response.data;
+        } catch (error: any) {
+            throw new Error(error.response?.data || error.message);
+        }
     }
 };
