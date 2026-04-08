@@ -929,6 +929,7 @@ const ProfileContent = ({ token, onLogout }: { token: string, onLogout: () => vo
   const [isLoading, setIsLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
   const [editData, setEditData] = useState({ username: '', display_name: '', bio: '', avatar_url: '' });
+  const [selectedVideo, setSelectedVideo] = useState<any>(null);
 
   const fetchProfile = async () => {
     if (!token) return;
@@ -1034,12 +1035,42 @@ const ProfileContent = ({ token, onLogout }: { token: string, onLogout: () => vo
       <div style={{ borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '30px' }}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '4px' }}>
           {profileData.videos?.map((vid: any) => (
-             <div key={vid.id} style={{ aspectRatio: '9/16', background: '#000', borderRadius: '4px', overflow: 'hidden', position: 'relative' }}>
+             <div 
+               key={vid.id} 
+               onClick={() => setSelectedVideo({
+                 id: vid.id,
+                 url: vid.url,
+                 username: `@${profileData.user.username}`,
+                 description: vid.description || "",
+                 initialLikes: vid.like_count || vid.likeCount || 0,
+                 comments: vid.comment_count || vid.commentCount || 0,
+                 shares: vid.share_count || vid.shareCount || 0,
+                 creatorId: profileData.user.id,
+                 isVerified: profileData.user.is_verified || false
+               })}
+               style={{ aspectRatio: '9/16', background: '#000', borderRadius: '4px', overflow: 'hidden', position: 'relative', cursor: 'pointer' }}
+             >
                 <video src={vid.url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
              </div>
           ))}
         </div>
       </div>
+
+      {selectedVideo && (
+        <div className="modal-overlay" style={{ zIndex: 3000, padding: 0 }}>
+          <button 
+            style={{ position: 'absolute', top: '20px', left: '20px', zIndex: 3001, background: 'rgba(0,0,0,0.5)', borderRadius: '50%', color: 'white', border: 'none', width: '45px', height: '45px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }} 
+            onClick={() => setSelectedVideo(null)}
+          >
+            <X size={28} />
+          </button>
+          <div style={{ width: '100vw', height: '100vh', display: 'flex', justifyContent: 'center', alignItems: 'center', background: 'black' }}>
+             <div style={{ height: '100%', maxWidth: '500px', width: '100%', position: 'relative' }}>
+                <VideoPost data={selectedVideo} token={token} />
+             </div>
+          </div>
+        </div>
+      )}
     </motion.div>
   );
 };
