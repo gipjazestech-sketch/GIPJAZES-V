@@ -18,6 +18,8 @@ services:
           property: connectionString
       - key: RAILWAY_PUBLIC_DOMAIN
         value: gipjazes-backend.onrender.com
+      - key: CLOUDINARY_URL
+        value: cloudinary://265858125732696:ZGNDDEn5nNDJu6OA19nnKgOpDNc@ddst0aipf
 
 databases:
   - name: gipjazes-db
