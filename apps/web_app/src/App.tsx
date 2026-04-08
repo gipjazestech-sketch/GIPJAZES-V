@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion, useInView, AnimatePresence } from 'framer-motion';
-import { Heart, MessageCircle, Share2, Compass, Home, User, Video, PlusSquare, Music, Play, Bookmark, X, Mail, Lock, UploadCloud, Film, Key, Search, Menu, CheckCircle, Gift, Bell } from 'lucide-react';
+import { Heart, MessageCircle, Share2, Compass, Home, User, Video, PlusSquare, Music, Play, Bookmark, X, Mail, Lock, UploadCloud, Key, Search, Menu, CheckCircle, Gift, Bell } from 'lucide-react';
 import { GIPJAZES_API } from './lib/api';
 import './index.css';
 import logo from './assets/logo.png';
@@ -301,6 +301,7 @@ const UploadModal = ({ isOpen, onClose, token }: { isOpen: boolean, onClose: () 
       >
         <button className="modal-close" onClick={onClose}><X size={28} /></button>
         <h2 className="modal-title">Share Your Content</h2>
+        <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="video/*" style={{ display: 'none' }} />
         
         {!selectedFile ? (
           <div className="upload-area" onClick={handleSelectFileClick}>
