@@ -11,7 +11,11 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
+
+	"github.com/cloudinary/cloudinary-go/v2"
+	"github.com/cloudinary/cloudinary-go/v2/api/uploader"
 
 	"cloud.google.com/go/storage"
 	_ "github.com/lib/pq"
@@ -100,8 +104,13 @@ func main() {
 	}
 
 	publicDomain := os.Getenv("RAILWAY_PUBLIC_DOMAIN")
+	if publicDomain == "" {
+		publicDomain = os.Getenv("RENDER_EXTERNAL_URL")
+	}
 	if publicDomain != "" {
-		publicDomain = "https://" + publicDomain
+		if !strings.HasPrefix(publicDomain, "http") {
+			publicDomain = "https://" + publicDomain
+		}
 	} else {
 		publicDomain = "http://localhost:" + appPort
 	}
@@ -123,11 +132,22 @@ func main() {
 	rdb := redis.NewClient(&redis.Options{Addr: redisAddr})
 	defer rdb.Close()
 
-	// 4. Initialize GCP Storage
+	// 4. Initialize GCP Storage and Cloudinary
 	ctx := context.Background()
 	storageClient, err := storage.NewClient(ctx)
 	if err != nil {
 		log.Printf("Warning: GCS Client failed to init (expected if no key provided): %v", err)
+	}
+
+	cloudinaryURL := os.Getenv("CLOUDINARY_URL")
+	var cld *cloudinary.Cloudinary
+	if cloudinaryURL != "" {
+		cld, err = cloudinary.NewFromURL(cloudinaryURL)
+		if err != nil {
+			log.Printf("Warning: Cloudinary Client failed to init: %v", err)
+		} else {
+			log.Printf("Cloudinary initialized successfully")
+		}
 	}
 
 	// 5. Initialize Repositories & Services
@@ -303,26 +323,40 @@ func main() {
 			}
 			defer file.Close()
 
-			// Prepare file storage locally
-			os.MkdirAll("uploads", os.ModePerm)
-			safeFilename := fmt.Sprintf("%d_%s", time.Now().UnixNano(), handler.Filename)
-			localPath := filepath.Join("uploads", safeFilename)
-			out, err := os.Create(localPath)
-			if err != nil {
-				http.Error(w, "Failed to save the file stream", http.StatusInternalServerError)
-				return
-			}
-			defer out.Close()
-			_, err = io.Copy(out, file)
-			if err != nil {
-				http.Error(w, "Failed writing file payload", http.StatusInternalServerError)
-				return
+			// Prepare file storage
+			var videoUrl string
+			if cld != nil {
+				resp, err := cld.Upload.Upload(context.Background(), file, uploader.UploadParams{
+					ResourceType: "video",
+					Folder:       "gipjazes",
+				})
+				if err != nil {
+					http.Error(w, fmt.Sprintf("Failed to upload to Cloudinary: %v", err), http.StatusInternalServerError)
+					return
+				}
+				videoUrl = resp.SecureURL
+			} else {
+				os.MkdirAll("uploads", os.ModePerm)
+				safeFilename := fmt.Sprintf("%d_%s", time.Now().UnixNano(), handler.Filename)
+				localPath := filepath.Join("uploads", safeFilename)
+				out, err := os.Create(localPath)
+				if err != nil {
+					http.Error(w, "Failed to save the file stream", http.StatusInternalServerError)
+					return
+				}
+				defer out.Close()
+				_, err = io.Copy(out, file)
+				if err != nil {
+					http.Error(w, "Failed writing file payload", http.StatusInternalServerError)
+					return
+				}
+				videoUrl = publicDomain + "/uploads/" + safeFilename
 			}
 
 			// Create a proper Video record in the DB using the native Postgres repo pointer
 			vid := &pb.Video{
 				CreatorId:   claims.UserID,
-				VideoUrl:    publicDomain + "/uploads/" + safeFilename,
+				VideoUrl:    videoUrl,
 				Description: r.FormValue("description"), // Can be retrieved from formData text input
 			}
 
@@ -1081,6 +1115,12 @@ func main() {
 		mux.Handle("/uploads/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Access-Control-Allow-Origin", "*")
 			w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Range, Content-Type")
+			w.Header().Set("Access-Control-Expose-Headers", "Content-Length, Content-Range")
+			if r.Method == "OPTIONS" {
+				w.WriteHeader(http.StatusOK)
+				return
+			}
 			http.StripPrefix("/uploads/", http.FileServer(http.Dir("./uploads"))).ServeHTTP(w, r)
 		}))
 
