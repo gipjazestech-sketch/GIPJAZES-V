@@ -1260,9 +1260,6 @@ function App() {
     }
   }, [activeTab, activeMood]);
 
-    );
-  };
-
   const NotificationsContent = () => {
     const [notifications, setNotifications] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);
