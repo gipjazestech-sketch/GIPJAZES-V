@@ -9,14 +9,17 @@
       }
     },
     {
-        "src": "apps/admin_dashboard/package.json",
-        "use": "@vercel/static-build",
-        "config": {
-          "distDir": "dist"
-        }
+      "src": "apps/admin_dashboard/package.json",
+      "use": "@vercel/static-build",
+      "config": {
+        "distDir": "dist"
+      }
     }
   ],
   "routes": [
+    {
+      "handle": "filesystem"
+    },
     {
       "src": "/admin/(.*)",
       "dest": "apps/admin_dashboard/$1"

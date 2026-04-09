@@ -1,0 +1,12 @@
+{
+  "name": "gipjazes-monorepo",
+  "private": true,
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "build:web": "npm run build --prefix apps/web_app",
+    "build:admin": "npm run build --prefix apps/admin_dashboard",
+    "build": "npm run build:web && npm run build:admin"
+  }
+}
