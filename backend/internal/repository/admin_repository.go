@@ -97,11 +97,11 @@ func (r *AdminRepository) GetRecentReports(ctx context.Context, limit int) ([]ma
 
 func (r *AdminRepository) GetTransactions(ctx context.Context, limit int) ([]map[string]interface{}, error) {
 	query := `
-		SELECT t.id, t.from_id, t.to_id, t.amount, t.type, t.created_at, 
+		SELECT t.id, t.sender_id, t.receiver_id, t.amount, t.type, t.created_at, 
 		       u1.username as from_user, u2.username as to_user
 		FROM transactions t
-		LEFT JOIN users u1 ON t.from_id = u1.id
-		LEFT JOIN users u2 ON t.to_id = u2.id
+		LEFT JOIN users u1 ON t.sender_id = u1.id
+		LEFT JOIN users u2 ON t.receiver_id = u2.id
 		ORDER BY t.created_at DESC
 		LIMIT $1
 	`
@@ -113,21 +113,22 @@ func (r *AdminRepository) GetTransactions(ctx context.Context, limit int) ([]map
 
 	var txs []map[string]interface{}
 	for rows.Next() {
-		var id, fromID, toID, fromUser, toUser, txType string
-		var amount float64
+		var id string
+		var senderID, receiverID, fromUser, toUser, txType sql.NullString
+		var amount int64
 		var createdAt time.Time
-		err := rows.Scan(&id, &fromID, &toID, &amount, &txType, &createdAt, &fromUser, &toUser)
+		err := rows.Scan(&id, &senderID, &receiverID, &amount, &txType, &createdAt, &fromUser, &toUser)
 		if err != nil {
 			return nil, err
 		}
 		txs = append(txs, map[string]interface{}{
 			"id":         id,
-			"from_id":    fromID,
-			"to_id":      toID,
-			"from_user":  fromUser,
-			"to_user":    toUser,
+			"from_id":    senderID.String,
+			"to_id":      receiverID.String,
+			"from_user":  fromUser.String,
+			"to_user":    toUser.String,
 			"amount":     amount,
-			"type":       txType,
+			"type":       txType.String,
 			"created_at": createdAt,
 		})
 	}

@@ -1144,6 +1144,64 @@ func main() {
 			json.NewEncoder(w).Encode(map[string]interface{}{"success": true})
 		})
 
+		// --- Admin Dashboard Endpoints ---
+		mux.HandleFunc("/api/admin/stats", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			stats, err := srv.adminRepo.GetStats(context.Background())
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(stats)
+		})
+
+		mux.HandleFunc("/api/admin/reports", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			reports, err := srv.adminRepo.GetRecentReports(context.Background(), 10)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(reports)
+		})
+
+		mux.HandleFunc("/api/admin/transactions", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			txs, err := srv.adminRepo.GetTransactions(context.Background(), 15)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(txs)
+		})
+
+		mux.HandleFunc("/api/admin/ban", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+			if r.Method == "OPTIONS" { return }
+			if r.Method != "POST" { http.Error(w, "Method not allowed", http.StatusMethodNotAllowed); return }
+
+			var req struct {
+				UserID string `json:"user_id"`
+				Reason string `json:"reason"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				http.Error(w, "Bad request", http.StatusBadRequest)
+				return
+			}
+			err := srv.adminRepo.BanUser(context.Background(), req.UserID, req.Reason)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]bool{"success": true})
+		})
+
 		// Expose Uploads directory natively so App.tsx can stream the local files directly!
 		// Expose Uploads directory with CORS so the frontend (Vercel) can stream videos from the backend (Render)
 		mux.Handle("/uploads/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1181,9 +1239,11 @@ func initDB(db *sql.DB) error {
 		display_name VARCHAR(100) NOT NULL,
 		email VARCHAR(255) UNIQUE NOT NULL,
 		password_hash TEXT NOT NULL DEFAULT '',
-		balance BIGINT DEFAULT 0,
 		avatar_url TEXT,
 		is_verified BOOLEAN DEFAULT FALSE,
+		is_banned BOOLEAN DEFAULT FALSE,
+		ban_reason TEXT,
+		balance BIGINT DEFAULT 0,
 		bio TEXT,
 		created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
 		updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
@@ -1209,6 +1269,8 @@ func initDB(db *sql.DB) error {
 		share_count INTEGER DEFAULT 0,
 		comment_count INTEGER DEFAULT 0,
 		view_count INTEGER DEFAULT 0,
+		is_featured BOOLEAN DEFAULT FALSE,
+		hashtags TEXT[] DEFAULT '{}',
 		created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
 		deleted_at TIMESTAMP WITH TIME ZONE
 	);
