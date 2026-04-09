@@ -17,7 +17,7 @@ func main() {
 	}
 	defer conn.Close(context.Background())
 
-	sqlFile, err := os.ReadFile("migrations/20260407_extended_features.sql")
+	sqlFile, err := os.ReadFile("migrations/20260408_extended_fixes.sql")
 	if err != nil {
 		log.Fatalf("Failed to read sql file: %v", err)
 	}

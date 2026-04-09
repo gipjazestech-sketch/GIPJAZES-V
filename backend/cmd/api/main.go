@@ -607,15 +607,53 @@ func main() {
 					return
 				}
 
-				err = srv.videoRepo.CreateComment(context.Background(), videoID, claims.UserID, content)
+				newCount, err := srv.videoRepo.CreateComment(context.Background(), videoID, claims.UserID, content)
 				if err != nil {
+					log.Printf("Comment create err: %v", err)
 					http.Error(w, err.Error(), http.StatusInternalServerError)
 					return
 				}
+
+				// Fire Notification
+				_ = srv.adminRepo.CreateNotification(context.Background(), videoID, claims.UserID, "comment", "New Comment", content, nil)
+
 				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode(map[string]interface{}{"success": true})
+				json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "new_count": newCount})
 				return
 			}
+		})
+
+		mux.HandleFunc("/api/live/list", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			list, err := srv.videoRepo.GetLiveBroadcasts(context.Background())
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(list)
+		})
+
+		mux.HandleFunc("/api/live/start", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+			if r.Method == "OPTIONS" { return }
+			
+			authHeader := r.Header.Get("Authorization")
+			if len(authHeader) < 8 { http.Error(w, "Unauthorized", http.StatusUnauthorized); return }
+			claims, err := tokenManager.Verify(authHeader[7:])
+			if err != nil { http.Error(w, "Unauthorized", http.StatusUnauthorized); return }
+
+			var req struct { Title string `json:"title"` }
+			json.NewDecoder(r.Body).Decode(&req)
+			
+			id, err := srv.videoRepo.StartLive(context.Background(), claims.UserID, req.Title)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "live_id": id})
 		})
 
 		mux.HandleFunc("/api/search", func(w http.ResponseWriter, r *http.Request) {
@@ -887,19 +925,15 @@ func main() {
 				return
 			}
 
-			isLiked, err := srv.videoRepo.ToggleLike(context.Background(), claims.UserID, videoID)
+			isLiked, newCount, err := srv.videoRepo.ToggleLike(context.Background(), claims.UserID, videoID)
 			if err != nil {
+				log.Printf("Like toggle err: %v", err)
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
 
-			// Fire notification if liked (and if we can fetch creator ID, assume we can't easily here without another query, so skipping for simplicity or passing nil)
-			if isLiked {
-				// To fully implement we'd lookup video creator. For now, we'll keep it simple.
-			}
-
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "is_liked": isLiked})
+			json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "is_liked": isLiked, "new_count": newCount})
 		})
 
 		mux.HandleFunc("/api/repost", func(w http.ResponseWriter, r *http.Request) {
@@ -1214,6 +1248,24 @@ func initDB(db *sql.DB) error {
 		reporter_id UUID NOT NULL REFERENCES users(id),
 		video_id UUID NOT NULL REFERENCES videos(id) ON DELETE CASCADE,
 		reason TEXT NOT NULL,
+		created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+	);
+
+	CREATE TABLE IF NOT EXISTS transactions (
+		id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+		sender_id UUID REFERENCES users(id),
+		receiver_id UUID REFERENCES users(id),
+		amount BIGINT NOT NULL,
+		type VARCHAR(50),
+		created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+	);
+
+	CREATE TABLE IF NOT EXISTS live_broadcasts (
+		id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+		host_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+		title TEXT,
+		is_active BOOLEAN DEFAULT TRUE,
+		view_count INTEGER DEFAULT 0,
 		created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 	);
 

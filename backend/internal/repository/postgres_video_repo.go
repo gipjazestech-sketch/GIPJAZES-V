@@ -166,26 +166,28 @@ func (r *PostgresVideoRepository) GetVideosByUserID(ctx context.Context, userID 
 	return videos, nil
 }
 
-func (r *PostgresVideoRepository) CreateComment(ctx context.Context, videoID, userID, content string) error {
+func (r *PostgresVideoRepository) CreateComment(ctx context.Context, videoID, userID, content string) (int, error) {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer tx.Rollback()
 
 	// 1. Insert comment
 	_, err = tx.ExecContext(ctx, "INSERT INTO comments (video_id, user_id, content) VALUES ($1, $2, $3)", videoID, userID, content)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	// 2. Increment comment count
-	_, err = tx.ExecContext(ctx, "UPDATE videos SET comment_count = comment_count + 1 WHERE id = $1", videoID)
+	var newCount int
+	err = tx.QueryRowContext(ctx, "UPDATE videos SET comment_count = comment_count + 1 WHERE id = $1 RETURNING comment_count", videoID).Scan(&newCount)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
-	return tx.Commit()
+	err = tx.Commit()
+	return newCount, err
 }
 
 func (r *PostgresVideoRepository) GetCommentsByVideoID(ctx context.Context, videoID string) ([]map[string]interface{}, error) {
@@ -262,10 +264,10 @@ func (r *PostgresVideoRepository) SearchVideos(ctx context.Context, query string
 	return videos, nil
 }
 
-func (r *PostgresVideoRepository) ToggleLike(ctx context.Context, userID, videoID string) (bool, error) {
+func (r *PostgresVideoRepository) ToggleLike(ctx context.Context, userID, videoID string) (bool, int, error) {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
-		return false, err
+		return false, 0, err
 	}
 	defer tx.Rollback()
 
@@ -273,36 +275,59 @@ func (r *PostgresVideoRepository) ToggleLike(ctx context.Context, userID, videoI
 	checkQuery := `SELECT EXISTS(SELECT 1 FROM likes WHERE user_id = $1 AND video_id = $2)`
 	err = tx.QueryRowContext(ctx, checkQuery, userID, videoID).Scan(&exists)
 	if err != nil {
-		return false, err
+		return false, 0, err
 	}
 
 	var isLiked bool
+	var newCount int
 	if exists {
 		// Unlike
 		_, err = tx.ExecContext(ctx, `DELETE FROM likes WHERE user_id = $1 AND video_id = $2`, userID, videoID)
 		if err != nil {
-			return false, err
+			return false, 0, err
 		}
-		_, err = tx.ExecContext(ctx, `UPDATE videos SET like_count = like_count - 1 WHERE id = $1`, videoID)
+		err = tx.QueryRowContext(ctx, `UPDATE videos SET like_count = like_count - 1 WHERE id = $1 RETURNING like_count`, videoID).Scan(&newCount)
 		if err != nil {
-			return false, err
+			return false, 0, err
 		}
 		isLiked = false
 	} else {
 		// Like
 		_, err = tx.ExecContext(ctx, `INSERT INTO likes (user_id, video_id) VALUES ($1, $2)`, userID, videoID)
 		if err != nil {
-			return false, err
+			return false, 0, err
 		}
-		_, err = tx.ExecContext(ctx, `UPDATE videos SET like_count = like_count + 1 WHERE id = $1`, videoID)
+		err = tx.QueryRowContext(ctx, `UPDATE videos SET like_count = like_count + 1 WHERE id = $1 RETURNING like_count`, videoID).Scan(&newCount)
 		if err != nil {
-			return false, err
+			return false, 0, err
 		}
 		isLiked = true
 	}
 
 	err = tx.Commit()
-	return isLiked, err
+	return isLiked, newCount, err
+}
+
+func (r *PostgresVideoRepository) StartLive(ctx context.Context, hostID, title string) (string, error) {
+	var id string
+	err := r.db.QueryRowContext(ctx, "INSERT INTO live_broadcasts (host_id, title) VALUES ($1, $2) RETURNING id", hostID, title).Scan(&id)
+	return id, err
+}
+
+func (r *PostgresVideoRepository) GetLiveBroadcasts(ctx context.Context) ([]map[string]interface{}, error) {
+	rows, err := r.db.QueryContext(ctx, "SELECT b.id, b.title, b.view_count, u.username FROM live_broadcasts b JOIN users u ON b.host_id = u.id WHERE b.is_active = TRUE")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var list []map[string]interface{}
+	for rows.Next() {
+		var id, title, username string
+		var views int
+		rows.Scan(&id, &title, &views, &username)
+		list = append(list, map[string]interface{}{"id": id, "title": title, "views": views, "username": username})
+	}
+	return list, nil
 }
 
 func (r *PostgresVideoRepository) CreateReport(ctx context.Context, reporterID, videoID, reason string) error {
