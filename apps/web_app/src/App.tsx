@@ -353,7 +353,7 @@ const CommentModal = ({
   onClose: () => void, 
   videoId: string, 
   token: string,
-  onCommentAdded: () => void
+  onCommentAdded: (count?: number) => void
 }) => {
   const [comments, setComments] = useState<any[]>([]);
   const [newComment, setNewComment] = useState("");
@@ -1153,8 +1153,13 @@ const LiveTab = ({ token }: { token: string }) => {
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ color: 'white', padding: '10vh 5%', width: '100%', maxWidth: '800px', margin: '0 auto' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '40px' }}>
         <h2 style={{ fontSize: '2rem' }}><Video size={32} color="var(--brand-danger)" style={{ verticalAlign: 'middle', marginRight: '10px' }} /> Live Now</h2>
-        <button className="upload-button" style={{ width: 'auto', padding: '10px 25px' }} onClick={handleStartLive}>
-          Go Live
+        <button 
+          className="upload-button" 
+          style={{ width: 'auto', padding: '10px 25px', opacity: isStarting ? 0.7 : 1 }} 
+          onClick={handleStartLive} 
+          disabled={isStarting}
+        >
+          {isStarting ? 'Starting...' : 'Go Live'}
         </button>
       </div>
 
