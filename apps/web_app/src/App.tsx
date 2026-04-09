@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion, useInView, AnimatePresence } from 'framer-motion';
-import { Heart, MessageCircle, Share2, Compass, Home, User, Video, PlusSquare, Music, Play, Bookmark, X, Mail, Lock, UploadCloud, Key, Search, Menu, CheckCircle, Gift, Bell } from 'lucide-react';
+import { Heart, MessageCircle, Share2, Compass, Home, User, Video, PlusSquare, Music, Play, Bookmark, X, Mail, Lock, UploadCloud, Key, Search, Menu, CheckCircle, Gift, Bell, Wallet } from 'lucide-react';
 import { GIPJAZES_API } from './lib/api';
 import './index.css';
 import logo from './assets/logo.png';
@@ -60,6 +60,7 @@ const Sidebar = ({
   const navItems = [
     { name: 'For You', icon: Home },
     { name: 'Explore', icon: Compass },
+    { name: 'Wallet', icon: Wallet },
     { name: 'Notifications', icon: Bell },
     { name: 'Live', icon: Video },
     { name: 'Profile', icon: User }
@@ -382,10 +383,14 @@ const CommentModal = ({
     
     setIsLoading(true);
     try {
-      await GIPJAZES_API.createComment(token, videoId.toString(), newComment);
+      const resp = await GIPJAZES_API.createComment(token, videoId.toString(), newComment);
       setNewComment("");
       await loadComments();
-      onCommentAdded();
+      if (resp.new_count !== undefined) {
+        onCommentAdded(resp.new_count);
+      } else {
+        onCommentAdded();
+      }
     } catch (e) {
       console.error(e);
     } finally {
@@ -610,7 +615,11 @@ const VideoPost = ({ data, token }: { data: VideoData, token: string }) => {
     setLikeCount(wasLiked ? likeCount - 1 : likeCount + 1);
     
     try {
-      await GIPJAZES_API.toggleLike(token, data.id.toString());
+      const resp = await GIPJAZES_API.toggleLike(token, data.id.toString());
+      if (resp.new_count !== undefined) {
+        setLikeCount(resp.new_count);
+        setIsLiked(resp.is_liked);
+      }
     } catch (e) {
       // Revert if failed
       setIsLiked(wasLiked);
@@ -630,10 +639,25 @@ const VideoPost = ({ data, token }: { data: VideoData, token: string }) => {
     setIsCommentModalOpen(true);
   };
 
-  const handleShare = () => {
+  const handleShare = async () => {
     setShareCount(shareCount + 1);
-    navigator.clipboard.writeText(window.location.origin + "?video=" + data.id);
-    alert("Share: Link copied to clipboard!");
+    const shareData = {
+      title: 'GIPJAZES V',
+      text: `Check out this video by ${data.username}`,
+      url: window.location.origin + "?video=" + data.id
+    };
+
+    if (navigator.share) {
+      try {
+        await navigator.share(shareData);
+      } catch (err) {
+        navigator.clipboard.writeText(shareData.url);
+        alert("Link copied to clipboard!");
+      }
+    } else {
+      navigator.clipboard.writeText(shareData.url);
+      alert("Link copied to clipboard!");
+    }
   };
 
   return (
@@ -837,7 +861,7 @@ const VideoPost = ({ data, token }: { data: VideoData, token: string }) => {
         onClose={() => setIsCommentModalOpen(false)} 
         videoId={data.id.toString()} 
         token={token}
-        onCommentAdded={() => setCommentCount(commentCount + 1)}
+        onCommentAdded={(count?: number) => setCommentCount(count !== undefined ? count : commentCount + 1)}
       />
     </div>
   );
@@ -915,11 +939,29 @@ const ExploreContent = () => {
       ) : searchQuery && !isSearching ? (
         <p style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No results found for "{searchQuery}"</p>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '20px', opacity: 0.5 }}>
-          {[1, 2, 3, 4, 5, 6].map(i => (
-            <div key={i} style={{ aspectRatio: '9/16', background: 'rgba(255,225,255,0.03)', borderRadius: '15px', border: '1px dashed rgba(255,255,255,0.05)' }} />
-          ))}
-        </div>
+        <>
+          <h3 style={{ marginBottom: '20px', fontSize: '1.2rem', opacity: 0.8 }}>Featured Creators</h3>
+          <div style={{ display: 'flex', gap: '15px', overflowX: 'auto', paddingBottom: '30px', marginBottom: '30px' }}>
+            {['NeonNova', 'PixelPioneer', 'DreamDrifter', 'CosmoCat', 'VibeVoyager'].map(user => (
+              <div key={user} style={{ textAlign: 'center', minWidth: '100px' }}>
+                <div style={{ width: '80px', height: '80px', borderRadius: '50%', background: 'linear-gradient(45deg, var(--brand-secondary), var(--brand-accent))', margin: '0 auto 10px', border: '2px solid var(--brand-primary)', padding: '3px' }}>
+                   <div style={{ width: '100%', height: '100%', borderRadius: '50%', background: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <User size={30} />
+                   </div>
+                </div>
+                <p style={{ fontSize: '0.8rem', fontWeight: 600 }}>@{user}</p>
+              </div>
+            ))}
+          </div>
+          <h3 style={{ marginBottom: '20px', fontSize: '1.2rem', opacity: 0.8 }}>Trending Now</h3>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '20px' }}>
+            {[1, 2, 3, 4, 5, 6].map(i => (
+              <div key={i} style={{ aspectRatio: '9/16', background: 'rgba(255,225,255,0.03)', borderRadius: '15px', border: '1px dashed rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                 <Play size={40} style={{ opacity: 0.1 }} />
+              </div>
+            ))}
+          </div>
+        </>
       )}
     </motion.div>
   );
@@ -1076,6 +1118,95 @@ const ProfileContent = ({ token, onLogout }: { token: string, onLogout: () => vo
   );
 };
 
+const LiveTab = ({ token }: { token: string }) => {
+  const [streams, setStreams] = useState<any[]>([]);
+  const [isStarting, setIsStarting] = useState(false);
+
+  useEffect(() => {
+    fetchStreams();
+  }, []);
+
+  const fetchStreams = async () => {
+    try {
+      const data = await GIPJAZES_API.getLiveBroadcasts();
+      setStreams(data || []);
+    } catch (e) {}
+  };
+
+  const handleStartLive = async () => {
+    if (!token) return alert("Login to go live!");
+    const title = prompt("Enter broadcast title:", "My Live Session");
+    if (!title) return;
+    setIsStarting(true);
+    try {
+      await GIPJAZES_API.startLive(token, title);
+      alert("Broadcast started! (Simulation: In a real app, your camera would turn on now)");
+      fetchStreams();
+    } catch (e) {
+      alert("Could not start broadcast");
+    } finally {
+      setIsStarting(false);
+    }
+  };
+
+  return (
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ color: 'white', padding: '10vh 5%', width: '100%', maxWidth: '800px', margin: '0 auto' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '40px' }}>
+        <h2 style={{ fontSize: '2rem' }}><Video size={32} color="var(--brand-danger)" style={{ verticalAlign: 'middle', marginRight: '10px' }} /> Live Now</h2>
+        <button className="upload-button" style={{ width: 'auto', padding: '10px 25px' }} onClick={handleStartLive}>
+          Go Live
+        </button>
+      </div>
+
+      {streams.length === 0 ? (
+        <div style={{ textAlign: 'center', marginTop: '10vh', opacity: 0.5 }}>
+          <Compass size={64} style={{ marginBottom: '20px' }} />
+          <p>No active broadcasts at the moment.</p>
+        </div>
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '20px' }}>
+          {streams.map((stream: any) => (
+            <div key={stream.id} style={{ background: 'rgba(255,255,255,0.05)', borderRadius: '15px', padding: '20px', border: '1px solid rgba(255,0,0,0.2)' }}>
+              <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '15px' }}>
+                <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: 'red', animation: 'pulse 1s infinite' }} />
+                <span style={{ fontSize: '0.8rem', fontWeight: 800, color: 'red', textTransform: 'uppercase' }}>Live</span>
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginLeft: 'auto' }}>{stream.views} watching</span>
+              </div>
+              <h3 style={{ marginBottom: '5px' }}>{stream.title}</h3>
+              <p style={{ color: 'var(--brand-primary)', fontSize: '0.9rem' }}>@{stream.username}</p>
+            </div>
+          ))}
+        </div>
+      )}
+    </motion.div>
+  );
+};
+
+const BottomNav = ({ activeTab, setActiveTab }: { activeTab: string, setActiveTab: (tab: string) => void }) => {
+  const items = [
+    { name: 'For You', icon: Home },
+    { name: 'Explore', icon: Compass },
+    { name: 'Wallet', icon: Wallet },
+    { name: 'Live', icon: Video },
+    { name: 'Profile', icon: User }
+  ];
+
+  return (
+    <div className="bottom-nav">
+      {items.map(item => (
+        <button
+          key={item.name}
+          className={`bottom-nav-item ${activeTab === item.name ? 'active' : ''}`}
+          onClick={() => setActiveTab(item.name)}
+        >
+          <item.icon size={22} />
+          <span>{item.name}</span>
+        </button>
+      ))}
+    </div>
+  );
+};
+
 function App() {
   const [showSplash, setShowSplash] = useState(true);
   const [activeTab, setActiveTab] = useState('For You');
@@ -1129,6 +1260,9 @@ function App() {
     }
   }, [activeTab, activeMood]);
 
+    );
+  };
+
   const NotificationsContent = () => {
     const [notifications, setNotifications] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -1167,6 +1301,59 @@ function App() {
     );
   };
 
+  const WalletContent = ({ token }: { token: string }) => {
+    const [balance, setBalance] = useState(0);
+    const [isLoading, setIsLoading] = useState(true);
+
+    useEffect(() => {
+      const fetchBalance = async () => {
+        setIsLoading(true);
+        try {
+          const data = await GIPJAZES_API.getProfile(token);
+          setBalance(data.user.balance || 0);
+        } catch (e) {} finally { setIsLoading(false); }
+      };
+      fetchBalance();
+    }, [token]);
+
+    const handleClaim = () => {
+      setBalance(prev => prev + 50);
+      alert("Claimed 50 GAZ! 🎁 Visit daily for more.");
+    };
+
+    if (isLoading) return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
+        <div className="loader" />
+      </div>
+    );
+
+    return (
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} style={{ color: 'white', padding: '10vh 5%', width: '100%', maxWidth: '600px', margin: '0 auto' }}>
+        <div style={{ textAlign: 'center', background: 'linear-gradient(135deg, #7000FF, #FF00E5)', borderRadius: '30px', padding: '50px 30px', boxShadow: '0 20px 50px rgba(112, 0, 255, 0.3)', marginBottom: '40px', position: 'relative', overflow: 'hidden' }}>
+          <motion.div animate={{ rotate: 360 }} transition={{ duration: 10, repeat: Infinity, ease: "linear" }} style={{ position: 'absolute', top: '-50px', right: '-50px', width: '200px', height: '200px', background: 'rgba(255,255,255,0.05)', borderRadius: '50%' }} />
+          <p style={{ textTransform: 'uppercase', letterSpacing: '2px', fontSize: '0.9rem', opacity: 0.8, marginBottom: '10px' }}>Current Balance</p>
+          <h2 style={{ fontSize: '4rem', fontWeight: 800 }}>{balance} <span style={{ fontSize: '1.5rem', opacity: 0.6 }}>GAZ</span></h2>
+          <div style={{ marginTop: '20px', display: 'flex', gap: '15px', justifyContent: 'center' }}>
+             <button onClick={handleClaim} style={{ padding: '12px 24px', borderRadius: '15px', background: 'white', color: 'black', border: 'none', fontWeight: 700, cursor: 'pointer' }}>Claim Daily</button>
+             <button style={{ padding: '12px 24px', borderRadius: '15px', background: 'rgba(255,255,255,0.1)', color: 'white', border: '1px solid rgba(255,255,255,0.2)', fontWeight: 700, cursor: 'pointer' }}>Convert</button>
+          </div>
+        </div>
+        <h3 style={{ marginBottom: '20px', fontSize: '1.5rem' }}>Transaction History</h3>
+        <div style={{ background: 'rgba(255,255,255,0.03)', borderRadius: '20px', padding: '10px' }}>
+           {[1, 2].map(i => (
+             <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '15px', borderBottom: i === 1 ? '1px solid rgba(255,255,255,0.05)' : 'none' }}>
+                <div>
+                   <p style={{ fontWeight: 600 }}>{i === 1 ? 'System Reward' : 'Virtual Gift'}</p>
+                   <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>2026-04-08</p>
+                </div>
+                <p style={{ color: i === 1 ? 'var(--brand-accent)' : 'var(--brand-danger)', fontWeight: 700 }}>{i === 1 ? '+50' : '-10'} GAZ</p>
+             </div>
+           ))}
+        </div>
+      </motion.div>
+    );
+  };
+
   const renderContent = () => {
     switch (activeTab) {
       case 'For You':
@@ -1177,6 +1364,8 @@ function App() {
         return <ExploreContent />;
       case 'Notifications':
         return <NotificationsContent />;
+      case 'Wallet':
+        return <WalletContent token={sessionToken} />;
       case 'Comedy':
       case 'Music':
       case 'Gaming':
@@ -1188,11 +1377,7 @@ function App() {
         ));
       case 'Live':
         return (
-          <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} style={{ color: 'white', marginTop: '20vh', textAlign: 'center', width: '100%' }}>
-            <Video size={64} color="var(--brand-danger)" style={{ margin: '0 auto 20px', display: 'block' }} />
-            <h2 style={{ fontSize: '2.5rem', marginBottom: '15px' }}>Live Broadcasts</h2>
-            <p style={{ color: 'var(--text-muted)', fontSize: '1.2rem' }}>No creators you follow are live right now.</p>
-          </motion.div>
+          <LiveTab token={sessionToken} />
         );
       case 'Profile':
         return (
@@ -1276,6 +1461,7 @@ function App() {
         )}
         {renderContent()}
       </div>
+      {(window.innerWidth <= 768) && <BottomNav activeTab={activeTab} setActiveTab={setActiveTab} />}
     </div>
   );
 }

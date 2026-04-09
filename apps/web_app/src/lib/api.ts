@@ -96,6 +96,7 @@ export const GIPJAZES_API = {
     },
 
     createComment: async (token: string, videoId: string, content: string) => {
+        if (!token) throw new Error("Authentication required");
         try {
             const response = await axios.post(`${REST_API_URL}/comments`, {
                 video_id: videoId,
@@ -103,20 +104,21 @@ export const GIPJAZES_API = {
             }, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
-            return response.data;
+            return response.data; // { success: true, new_count: X }
         } catch (error: any) {
             throw new Error(error.response?.data || error.message);
         }
     },
 
     toggleLike: async (token: string, videoId: string) => {
+        if (!token) throw new Error("Authentication required");
         try {
             const response = await axios.post(`${REST_API_URL}/like`, {
                 video_id: videoId
             }, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
-            return response.data;
+            return response.data; // { success: true, is_liked: X, new_count: Y }
         } catch (error: any) {
             throw new Error(error.response?.data || error.message);
         }
@@ -185,10 +187,30 @@ export const GIPJAZES_API = {
         }
     },
     getNotifications: async (token: string) => {
+        if (!token) throw new Error("Authentication required");
         try {
             const response = await axios.get(`${REST_API_URL}/notifications`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
+            return response.data;
+        } catch (error: any) {
+            throw new Error(error.response?.data || error.message);
+        }
+    },
+    startLive: async (token: string, title: string) => {
+        if (!token) throw new Error("Authentication required");
+        try {
+            const response = await axios.post(`${REST_API_URL}/live/start`, { title }, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            return response.data;
+        } catch (error: any) {
+            throw new Error(error.response?.data || error.message);
+        }
+    },
+    getLiveBroadcasts: async () => {
+        try {
+            const response = await axios.get(`${REST_API_URL}/live/list`);
             return response.data;
         } catch (error: any) {
             throw new Error(error.response?.data || error.message);
