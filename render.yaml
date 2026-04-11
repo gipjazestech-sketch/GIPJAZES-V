@@ -20,5 +20,4 @@ services:
 
   - type: redis
     name: gipjazes-redis
-    plan: free
     ipAllowList: []
