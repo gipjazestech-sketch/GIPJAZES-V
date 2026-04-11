@@ -1,9 +1,9 @@
 services:
   - type: web
-    name: gipjazes-backend
+    name: gipjazes-api-server
     env: docker
-    dockerContext: backend
-    dockerfilePath: Dockerfile
+    dockerContext: .
+    dockerfilePath: backend/Dockerfile
     plan: free
     envVars:
       - key: PORT

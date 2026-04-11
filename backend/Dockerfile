@@ -3,13 +3,16 @@ FROM golang:1.23-alpine AS builder
 
 WORKDIR /app
 
-# Copy the entire monorepo context to handle shared dependencies if needed
-COPY go.mod go.sum ./
+# Copy the backend context
+COPY backend/go.mod backend/go.sum ./backend/
+WORKDIR /app/backend
 RUN go mod download
 
-COPY . .
+WORKDIR /app
+COPY backend ./backend
 
 # Build the API binary
+WORKDIR /app/backend
 RUN go build -o main ./cmd/api/main.go
 
 # Final stage
