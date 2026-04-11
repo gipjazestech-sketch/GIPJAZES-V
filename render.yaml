@@ -4,6 +4,7 @@ services:
     env: docker
     dockerContext: backend
     dockerfilePath: Dockerfile
+    plan: free
     envVars:
       - key: PORT
         value: 8080
@@ -14,12 +15,10 @@ services:
           name: gipjazes-redis
           type: redis
           property: connectionString
-      - key: RAILWAY_PUBLIC_DOMAIN
-        value: gipjazes-backend.onrender.com
       - key: CLOUDINARY_URL
         value: cloudinary://265858125732696:ZGNDDEn5nNDJu6OA19nnKgOpDNc@ddst0aipf
 
-redis:
-  - name: gipjazes-redis
+  - type: redis
+    name: gipjazes-redis
     plan: free
-    ipAllowList: [] # Only allow internal connections
+    ipAllowList: []
