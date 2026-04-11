@@ -457,7 +457,7 @@ const CommentModal = ({
 
 
 interface VideoData {
-  id: number;
+  id: string;
   url: string;
   username: string;
   description: string;
@@ -929,7 +929,7 @@ const ExploreContent = () => {
               whileHover={{ scale: 1.05 }}
               style={{ background: '#000', aspectRatio: '9/16', borderRadius: '15px', overflow: 'hidden', position: 'relative', cursor: 'pointer', border: '1px solid rgba(255,255,255,0.1)' }}
             >
-              <video src={vid.url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              <video src={vid.video_url || vid.videoUrl || vid.url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
               <div style={{ position: 'absolute', bottom: '0', left: '0', right: '0', padding: '10px', background: 'linear-gradient(transparent, rgba(0,0,0,0.8))' }}>
                 <p style={{ fontSize: '0.85rem', fontWeight: 600 }}>@{vid.creator?.username || 'user'}</p>
               </div>
@@ -1082,7 +1082,7 @@ const ProfileContent = ({ token, onLogout }: { token: string, onLogout: () => vo
                key={vid.id} 
                onClick={() => setSelectedVideo({
                  id: vid.id,
-                 url: vid.url,
+                 url: vid.video_url || vid.videoUrl || vid.url,
                  username: `@${profileData.user.username}`,
                  description: vid.description || "",
                  initialLikes: vid.like_count || vid.likeCount || 0,
@@ -1093,7 +1093,7 @@ const ProfileContent = ({ token, onLogout }: { token: string, onLogout: () => vo
                })}
                style={{ aspectRatio: '9/16', background: '#000', borderRadius: '4px', overflow: 'hidden', position: 'relative', cursor: 'pointer' }}
              >
-                <video src={vid.url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                 <video src={vid.video_url || vid.videoUrl || vid.url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
              </div>
           ))}
         </div>
@@ -1242,14 +1242,14 @@ function App() {
         if (feedData && feedData.videos) {
           const mappedFeed = feedData.videos.map((vid: any) => ({
             id: vid.id,
-            url: vid.url,
-            username: vid.creator ? `@${vid.creator.username}` : `@${vid.creatorId.substring(0, 8)}`,
-            creatorId: vid.creatorId,
-            isVerified: vid.creator?.isVerified || false,
+            url: vid.video_url || vid.videoUrl || vid.url,
+            username: vid.creator ? `@${vid.creator.username}` : `@${vid.creator_id ? vid.creator_id.substring(0, 8) : 'user'}`,
+            creatorId: vid.creator_id || vid.creatorId,
+            isVerified: vid.creator?.is_verified || vid.creator?.isVerified || false,
             description: vid.description,
-            initialLikes: vid.likeCount || 0,
-            comments: vid.commentCount || 0,
-            shares: vid.shareCount || 0
+            initialLikes: vid.like_count || vid.likeCount || 0,
+            comments: vid.comment_count || vid.commentCount || 0,
+            shares: vid.share_count || vid.shareCount || 0
           }));
           setVideoFeed(mappedFeed.length > 0 ? mappedFeed : []);
         } else {

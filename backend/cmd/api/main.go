@@ -84,8 +84,9 @@ func (s *masterServer) AdminTakedown(ctx context.Context, req *pb.TakedownReques
 }
 
 func main() {
-	// Load environment variables from .env
+	// Load environment variables from .env (checks current and parent dir)
 	godotenv.Load()
+	godotenv.Load("../.env")
 
 	// 1. Load Config (Using Environment Variables for Cloud)
 	dbDSN := os.Getenv("DATABASE_URL")
@@ -281,6 +282,11 @@ func main() {
 
 		mux.HandleFunc("/api/categories", func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+			if r.Method == "OPTIONS" {
+				return
+			}
 			w.Header().Set("Content-Type", "application/json")
 			categories := []string{"For You", "Comedy", "Music", "Gaming", "Tech", "Travel", "Food"}
 			json.NewEncoder(w).Encode(categories)
@@ -807,11 +813,7 @@ func main() {
 			json.NewEncoder(w).Encode(msg)
 		})
 
-		mux.HandleFunc("/api/admin/stats", adminHandler.HandleGetStats)
-		mux.HandleFunc("/api/admin/reports", adminHandler.HandleGetReports)
-		mux.HandleFunc("/api/admin/transactions", adminHandler.HandleGetTransactions)
-		mux.HandleFunc("/api/admin/ban", adminHandler.HandleBanUser)
-		mux.HandleFunc("/api/admin/feature", adminHandler.HandleFeatureVideo)
+
 
 		mux.HandleFunc("/api/notifications", func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -1147,6 +1149,9 @@ func main() {
 		// --- Admin Dashboard Endpoints ---
 		mux.HandleFunc("/api/admin/stats", func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+			if r.Method == "OPTIONS" { return }
 			stats, err := srv.adminRepo.GetStats(context.Background())
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -1158,6 +1163,9 @@ func main() {
 
 		mux.HandleFunc("/api/admin/reports", func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+			if r.Method == "OPTIONS" { return }
 			reports, err := srv.adminRepo.GetRecentReports(context.Background(), 10)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -1169,6 +1177,9 @@ func main() {
 
 		mux.HandleFunc("/api/admin/transactions", func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+			if r.Method == "OPTIONS" { return }
 			txs, err := srv.adminRepo.GetTransactions(context.Background(), 15)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -1181,7 +1192,7 @@ func main() {
 		mux.HandleFunc("/api/admin/ban", func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Access-Control-Allow-Origin", "*")
 			w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
-			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 			if r.Method == "OPTIONS" { return }
 			if r.Method != "POST" { http.Error(w, "Method not allowed", http.StatusMethodNotAllowed); return }
 

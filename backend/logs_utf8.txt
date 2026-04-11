@@ -1,0 +1,11 @@
+﻿.\server.exe : 2026/02/26 23:18:33 Warning: GCS Client failed to init (expected if no key provided): dialing: 
+credentials: could not find default credentials. See https://cloud.google.com/docs/authentication/external/set-up-adc 
+for more information
+At line:1 char:1
++ .\server.exe > backend_logs.txt 2>&1
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (2026/02/26 23:1...ore information:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+2026/02/26 23:18:33 failed to listen: listen tcp :9090: bind: Only one usage of each socket address (protocol/network 
+address/port) is normally permitted.

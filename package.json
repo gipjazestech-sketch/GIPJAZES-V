@@ -7,6 +7,7 @@
   "scripts": {
     "build:web": "npm run build --prefix apps/web_app",
     "build:admin": "npm run build --prefix apps/admin_dashboard",
-    "build": "npm run build:web && npm run build:admin"
+    "build": "npm run build:web && npm run build:admin",
+    "dev:backend": "cd backend && go run cmd/api/main.go"
   }
 }

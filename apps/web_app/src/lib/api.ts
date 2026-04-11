@@ -6,8 +6,6 @@ const REST_API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api'
 export const GIPJAZES_API = {
     login: async (email: string, password: string) => {
         try {
-            // NOTE: Our backend expects a `username` field for login, but we collected an `email`. 
-            // For now, we'll map email to username just to hit the endpoint correctly.
             const response = await axios.post(`${REST_API_URL}/auth/login`, {
                 email: email,
                 password: password
