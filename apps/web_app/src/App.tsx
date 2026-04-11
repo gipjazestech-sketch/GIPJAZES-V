@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion, useInView, AnimatePresence } from 'framer-motion';
-import { Heart, MessageCircle, Share2, Compass, Home, User, Video, PlusSquare, Music, Play, Bookmark, X, Mail, Lock, UploadCloud, Key, Search, Menu, CheckCircle, Gift, Bell, Wallet } from 'lucide-react';
+import { Heart, MessageCircle, Share2, Compass, Home, User, PlusSquare, Play, Bookmark, X, Mail, Lock, UploadCloud, Key, Search, Menu, CheckCircle, Gift, Bell } from 'lucide-react';
 import { GIPJAZES_API } from './lib/api';
 import './index.css';
 import logo from './assets/logo.png';
