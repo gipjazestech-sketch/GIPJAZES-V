@@ -5,7 +5,7 @@ import { GIPJAZES_API } from './lib/api';
 import './index.css';
 import logo from './assets/logo.png';
 
-const categories = ["Comedy", "Music", "Gaming", "Tech", "Travel", "Food"];
+const categories = ["Comedy", "Music", "Tech", "Travel", "Food"];
 
 // Removed mockFeed in favor of live DB connection
 
@@ -60,9 +60,7 @@ const Sidebar = ({
   const navItems = [
     { name: 'For You', icon: Home },
     { name: 'Explore', icon: Compass },
-    { name: 'Wallet', icon: Wallet },
     { name: 'Notifications', icon: Bell },
-    { name: 'Live', icon: Video },
     { name: 'Profile', icon: User }
   ];
 
@@ -164,7 +162,7 @@ const AuthModal = ({ isOpen, onClose, onSuccess }: { isOpen: boolean, onClose: (
           setRecoveryToken('');
         } else {
           const res = await GIPJAZES_API.forgotPassword(email);
-          alert("Recovery token generated: " + res.recovery_token);
+          alert("Successful");
           setRecoveryToken(res.recovery_token);
         }
       } else if (isLogin) {
@@ -810,7 +808,7 @@ const VideoPost = ({ data, token }: { data: VideoData, token: string }) => {
               if(!token) return alert("Login to repost!");
               try {
                 await GIPJAZES_API.repost(token, data.id.toString());
-                alert("Video reposted to your profile!");
+                alert("Successful");
               } catch(e) { alert("Repost failed"); }
             }}
           >
@@ -822,13 +820,21 @@ const VideoPost = ({ data, token }: { data: VideoData, token: string }) => {
             whileHover={{ y: -5 }}
             whileTap={{ scale: 0.8 }}
             className="action-btn"
-            onClick={() => {
-              const link = document.createElement('a');
-              link.href = data.url;
-              link.download = `gipjazes_video_${data.id}.mp4`;
-              document.body.appendChild(link);
-              link.click();
-              document.body.removeChild(link);
+            onClick={async () => {
+              try {
+                const response = await fetch(data.url);
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = `gipjazes_video_${data.id}.mp4`;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                window.URL.revokeObjectURL(url);
+              } catch (e) {
+                alert("Download failed. Try long-pressing the video.");
+              }
             }}
           >
             <div className="btn-icon-wrapper"><UploadCloud size={26} strokeWidth={2} style={{ transform: 'rotate(180deg)' }} /></div>
@@ -845,7 +851,7 @@ const VideoPost = ({ data, token }: { data: VideoData, token: string }) => {
               if(amt) {
                  try {
                    await GIPJAZES_API.sendGift(token, data.creatorId, parseInt(amt));
-                   alert(`Sent ${amt} tokens! 🎁`);
+                   alert("Successful");
                  } catch(e:any) { alert(e.message); }
               }
             }}
@@ -999,7 +1005,7 @@ const ProfileContent = ({ token, onLogout }: { token: string, onLogout: () => vo
   const handleUpdate = async () => {
     try {
       await GIPJAZES_API.updateProfile(token, editData);
-      alert("Profile updated successfully!");
+      alert("Successful");
       setIsEditing(false);
       fetchProfile();
     } catch (e) {
@@ -1036,10 +1042,29 @@ const ProfileContent = ({ token, onLogout }: { token: string, onLogout: () => vo
     >
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: '40px' }}>
         <div style={{ position: 'relative' }}>
-          <div style={{ width: '100px', height: '100px', borderRadius: '50%', background: 'linear-gradient(45deg, var(--brand-primary), var(--brand-secondary))', marginBottom: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '2.5rem', fontWeight: 800, overflow: 'hidden' }}>
+          <div 
+            onClick={() => {
+              const input = document.createElement('input');
+              input.type = 'file';
+              input.accept = 'image/*';
+              input.onchange = async (e: any) => {
+                const file = e.target.files[0];
+                if (file) {
+                  try {
+                    const res = await GIPJAZES_API.uploadAvatar(file, token);
+                    await GIPJAZES_API.updateProfile(token, { avatar_url: res.avatar_url });
+                    alert("Successful");
+                    fetchProfile();
+                  } catch (err) { alert("Upload failed"); }
+                }
+              };
+              input.click();
+            }}
+            style={{ width: '100px', height: '100px', borderRadius: '50%', background: 'linear-gradient(45deg, var(--brand-primary), var(--brand-secondary))', marginBottom: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '2.5rem', fontWeight: 800, overflow: 'hidden', cursor: 'pointer', border: '3px solid var(--brand-primary)' }}
+          >
             {profileData.user?.avatar_url ? <img src={profileData.user.avatar_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : profileData.user?.username?.[0]?.toUpperCase()}
           </div>
-          <button onClick={() => setIsEditing(true)} style={{ position: 'absolute', bottom: '15px', right: '-5px', background: 'var(--brand-primary)', border: 'none', borderRadius: '50%', width: '30px', height: '30px', cursor: 'pointer', color: 'black' }}><PlusSquare size={16} /></button>
+          <button style={{ position: 'absolute', bottom: '15px', right: '-5px', background: 'var(--brand-primary)', border: 'none', borderRadius: '50%', width: '30px', height: '30px', cursor: 'pointer', color: 'black', pointerEvents: 'none' }}><PlusSquare size={16} /></button>
         </div>
         <h2 style={{ fontSize: '2rem', marginBottom: '4px' }}>@{profileData.user?.username}</h2>
         <p style={{ color: 'var(--text-muted)', marginBottom: '20px' }}>{profileData.user?.display_name}</p>
@@ -1191,8 +1216,6 @@ const BottomNav = ({ activeTab, setActiveTab }: { activeTab: string, setActiveTa
   const items = [
     { name: 'For You', icon: Home },
     { name: 'Explore', icon: Compass },
-    { name: 'Wallet', icon: Wallet },
-    { name: 'Live', icon: Video },
     { name: 'Profile', icon: User }
   ];
 
@@ -1424,7 +1447,7 @@ function App() {
       <div className="main-feed" style={{ display: activeTab === 'For You' ? 'flex' : 'block' }}>
         {activeTab === 'For You' && !showSplash && (
           <div className="mood-bar-container" style={{ position: 'sticky', top: '0', left: '0', right: '0', zIndex: 100, display: 'flex', gap: '10px', overflowX: 'auto', padding: '20px', background: 'linear-gradient(to bottom, var(--bg-dark), transparent)', backdropFilter: 'blur(5px)', paddingLeft: isSidebarOpen ? '20px' : '80px' }}>
-             {['Trending', 'Hyped', 'Chill', 'Insightful', 'Wild', 'Gaming'].map(mood => (
+             {['Trending'].map(mood => (
                <motion.button
                  key={mood}
                  whileTap={{ scale: 0.95 }}

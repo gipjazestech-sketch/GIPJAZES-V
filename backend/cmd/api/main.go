@@ -288,7 +288,7 @@ func main() {
 				return
 			}
 			w.Header().Set("Content-Type", "application/json")
-			categories := []string{"For You", "Comedy", "Music", "Gaming", "Tech", "Travel", "Food"}
+			categories := []string{"For You", "Comedy", "Music", "Tech", "Travel", "Food"}
 			json.NewEncoder(w).Encode(categories)
 		})
 
@@ -374,6 +374,45 @@ func main() {
 
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "video": vid})
+		})
+
+		mux.HandleFunc("/api/profile/avatar", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+			if r.Method == "OPTIONS" { return }
+
+			authHeader := r.Header.Get("Authorization")
+			if len(authHeader) < 8 { http.Error(w, "Unauthorized", http.StatusUnauthorized); return }
+			claims, err := tokenManager.Verify(authHeader[7:])
+			if err != nil { http.Error(w, "Unauthorized", http.StatusUnauthorized); return }
+
+			err = r.ParseMultipartForm(10 << 20) // 10MB
+			if err != nil { http.Error(w, "File too large", http.StatusBadRequest); return }
+
+			file, _, err := r.FormFile("avatar")
+			if err != nil { http.Error(w, "Missing file", http.StatusBadRequest); return }
+			defer file.Close()
+
+			var avatarUrl string
+			if cloudinaryURL != "" {
+				cld, _ := cloudinary.NewFromURL(cloudinaryURL)
+				uploadResult, err := cld.Uploaders.Upload(context.Background(), file, uploader.UploadParams{
+					Folder: "gipjazes_avatars",
+				})
+				if err != nil { http.Error(w, "Cloudinary upload failed", http.StatusInternalServerError); return }
+				avatarUrl = uploadResult.SecureURL
+			} else {
+				// Local fallback if no cloudinary
+				tempFile, err := os.CreateTemp("uploads", "avatar-*.jpg")
+				if err != nil { http.Error(w, "Local save failed", http.StatusInternalServerError); return }
+				defer tempFile.Close()
+				io.Copy(tempFile, file)
+				avatarUrl = publicDomain + "/uploads/" + filepath.Base(tempFile.Name())
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "avatar_url": avatarUrl})
 		})
 
 		mux.HandleFunc("/api/profile", func(w http.ResponseWriter, r *http.Request) {

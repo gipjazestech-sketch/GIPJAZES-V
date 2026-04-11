@@ -59,6 +59,23 @@ export const GIPJAZES_API = {
         }
     },
 
+    uploadAvatar: async (file: File, token: string) => {
+        try {
+            const formData = new FormData();
+            formData.append('avatar', file);
+
+            const response = await axios.post(`${REST_API_URL}/profile/avatar`, formData, {
+                headers: {
+                    'Content-Type': 'multipart/form-data',
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+            return response.data;
+        } catch (error: any) {
+            throw new Error(error.response?.data || error.message);
+        }
+    },
+
     searchVideos: async (query: string) => {
         try {
             const response = await axios.get(`${REST_API_URL}/search`, {

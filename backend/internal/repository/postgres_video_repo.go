@@ -88,7 +88,7 @@ func (r *PostgresVideoRepository) GetRecentVideos(ctx context.Context, limit, of
 	`
 
 	args := []interface{}{limit, offset}
-	if category != "" {
+	if category != "" && category != "For You" && category != "Trending" {
 		query += ` AND v.category = $3`
 		args = append(args, category)
 	}
