@@ -18,6 +18,7 @@ services:
       - key: CLOUDINARY_URL
         value: cloudinary://265858125732696:ZGNDDEn5nNDJu6OA19nnKgOpDNc@ddst0aipf
 
-redis:
-  - name: gipjazes-redis
+  - type: redis
+    name: gipjazes-redis
     plan: free
+    ipAllowList: []
