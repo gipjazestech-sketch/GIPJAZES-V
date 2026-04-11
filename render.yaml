@@ -1,9 +1,9 @@
 services:
   - type: web
     name: gipjazes-backend
-    env: go
-    buildCommand: cd backend && go build -o main cmd/api/main.go
-    startCommand: ./backend/main
+    env: docker
+    dockerContext: backend
+    dockerfilePath: Dockerfile
     envVars:
       - key: PORT
         value: 8080
