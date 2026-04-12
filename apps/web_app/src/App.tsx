@@ -61,7 +61,9 @@ const Sidebar = ({
     { name: 'For You', icon: Home },
     { name: 'Explore', icon: Compass },
     { name: 'Notifications', icon: Bell },
-    { name: 'Profile', icon: User }
+    { name: 'Profile', icon: User },
+    { name: 'Wallet', icon: PlusSquare },
+    { name: 'Live', icon: Video }
   ];
 
   const handleItemClick = (name: string) => {
@@ -323,8 +325,22 @@ const UploadModal = ({ isOpen, onClose, token }: { isOpen: boolean, onClose: () 
               placeholder="#hashtags #tiktok #viral" 
               value={hashtags} 
               onChange={e => setHashtags(e.target.value)} 
-              style={{ marginBottom: '20px' }}
+              style={{ marginBottom: '10px' }}
             />
+            <div style={{ marginBottom: '20px' }}>
+              <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '8px' }}>Select Template</p>
+              <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '10px' }}>
+                {['None', 'Retro', 'B&W', 'Vibrant', 'Cinematic'].map(t => (
+                  <button
+                    key={t}
+                    onClick={() => setDescription(prev => `[Template: ${t}] ${prev}`)}
+                    style={{ padding: '6px 12px', borderRadius: '8px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: 'white', fontSize: '0.75rem', cursor: 'pointer' }}
+                  >
+                    {t}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
         )}
 
@@ -684,6 +700,7 @@ const VideoPost = ({ data, token }: { data: VideoData, token: string }) => {
           onDoubleClick={handleDoubleTap}
           loop
           playsInline
+          autoPlay
           muted={isMuted}
         />
 
@@ -1099,7 +1116,7 @@ const ProfileContent = ({ token, onLogout }: { token: string, onLogout: () => vo
         </div>
 
         <p style={{ textAlign: 'center', maxWidth: '500px', lineHeight: 1.6, color: 'rgba(255,255,255,0.8)', marginBottom: '20px' }}>
-          {profileData.user?.bio || "No bio yet."}
+          {profileData.user?.bio || profileData.bio || "No bio yet."}
         </p>
 
         <div style={{ display: 'flex', gap: '10px' }}>
@@ -1235,33 +1252,12 @@ const LiveTab = ({ token }: { token: string }) => {
   );
 };
 
-const BottomNav = ({ activeTab, setActiveTab }: { activeTab: string, setActiveTab: (tab: string) => void }) => {
-  const items = [
-    { name: 'For You', icon: Home },
-    { name: 'Explore', icon: Compass },
-    { name: 'Profile', icon: User }
-  ];
 
-  return (
-    <div className="bottom-nav">
-      {items.map(item => (
-        <button
-          key={item.name}
-          className={`bottom-nav-item ${activeTab === item.name ? 'active' : ''}`}
-          onClick={() => setActiveTab(item.name)}
-        >
-          <item.icon size={22} />
-          <span>{item.name}</span>
-        </button>
-      ))}
-    </div>
-  );
-};
 
 function App() {
   const [showSplash, setShowSplash] = useState(true);
   const [activeTab, setActiveTab] = useState('For You');
-  const [activeMood, setActiveMood] = useState('Trending'); // Mood filter
+  const [activeMood] = useState('Trending'); // Mood filter (setActiveMood removed as unused)
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [sessionToken, setSessionToken] = useState(localStorage.getItem('gipjazes_token') || '');
@@ -1467,49 +1463,24 @@ function App() {
         isOpen={isSidebarOpen}
         setIsOpen={setIsSidebarOpen}
       />
-      <div className="main-feed" style={{ display: activeTab === 'For You' ? 'flex' : 'block' }}>
-        {activeTab === 'For You' && !showSplash && (
-          <div className="mood-bar-container" style={{ position: 'sticky', top: '0', left: '0', right: '0', zIndex: 100, display: 'flex', gap: '10px', overflowX: 'auto', padding: '20px', background: 'linear-gradient(to bottom, var(--bg-dark), transparent)', backdropFilter: 'blur(5px)', paddingLeft: isSidebarOpen ? '20px' : '80px' }}>
-             {['Trending'].map(mood => (
-               <motion.button
-                 key={mood}
-                 whileTap={{ scale: 0.95 }}
-                 onClick={() => setActiveMood(mood)}
-                 style={{
-                   padding: '10px 24px',
-                   borderRadius: '30px',
-                   border: 'none',
-                   background: activeMood === mood ? 'var(--brand-primary)' : 'rgba(255,255,255,0.05)',
-                   color: activeMood === mood ? 'black' : 'white',
-                   fontWeight: 700,
-                   fontSize: '0.9rem',
-                   cursor: 'pointer',
-                   whiteSpace: 'nowrap',
-                   boxShadow: activeMood === mood ? '0 0 20px rgba(255, 0, 229, 0.4)' : 'none',
-                   transition: 'all 0.3s ease'
-                 }}
-               >
-                 {mood}
-               </motion.button>
-             ))}
-          </div>
-        )}
+      <div className="main-feed" style={{ display: (activeTab === 'For You' || categories.includes(activeTab)) ? 'flex' : 'block' }}>
+        {/* Trending bar removed per request */}
         {!isSidebarOpen && (
           <div className="mobile-header-actions">
             <button className="mobile-action-btn" onClick={() => setIsSidebarOpen(true)}>
               <Menu size={24} />
             </button>
-            <button className="mobile-action-btn" onClick={() => setActiveTab('Explore')}>
-              <Search size={22} />
-            </button>
-            <button className="mobile-action-btn" style={{ borderColor: 'var(--brand-accent)' }} onClick={() => setIsUploadModalOpen(true)}>
+            <div className="brand-text" style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-main)', letterSpacing: '0.5px', marginLeft: '10px' }}>
+               GIPJAZES<span style={{ color: 'var(--brand-primary)' }}>.V</span>
+            </div>
+            <button className="mobile-action-btn" style={{ marginLeft: 'auto', borderColor: 'var(--brand-accent)' }} onClick={() => setIsUploadModalOpen(true)}>
               <PlusSquare size={22} color="var(--brand-accent)" />
             </button>
           </div>
         )}
         {renderContent()}
       </div>
-      {(window.innerWidth <= 768) && <BottomNav activeTab={activeTab} setActiveTab={setActiveTab} />}
+      {/* BottomNav removed per request - all items moved to Sidebar */}
     </div>
   );
 }

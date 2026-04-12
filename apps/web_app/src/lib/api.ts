@@ -1,7 +1,8 @@
 import axios from 'axios';
 
 // The API Gateway runs on port 8080 locally, but uses VITE_API_URL in production (Vercel)
-const REST_API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
+// Production Render Backend URL
+const REST_API_URL = import.meta.env.VITE_API_URL || 'https://gipjazes-v-api.onrender.com/api';
 
 export const GIPJAZES_API = {
     login: async (email: string, password: string) => {

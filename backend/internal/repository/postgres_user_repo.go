@@ -46,19 +46,20 @@ func (r *PostgresUserRepository) GetByEmail(ctx context.Context, email string) (
 	return user, passHash.String, nil
 }
 
-func (r *PostgresUserRepository) GetUserByID(ctx context.Context, id string) (*pb.User, error) {
-	query := `SELECT id, username, display_name, avatar_url, is_verified FROM users WHERE id = $1 AND deleted_at IS NULL`
+func (r *PostgresUserRepository) GetUserByID(ctx context.Context, id string) (*pb.User, string, error) {
+	query := `SELECT id, username, display_name, avatar_url, is_verified, bio FROM users WHERE id = $1 AND deleted_at IS NULL`
 
 	user := &pb.User{}
+	var bio sql.NullString
 
 	err := r.db.QueryRowContext(ctx, query, id).Scan(
-		&user.Id, &user.Username, &user.DisplayName, &user.AvatarUrl, &user.IsVerified,
+		&user.Id, &user.Username, &user.DisplayName, &user.AvatarUrl, &user.IsVerified, &bio,
 	)
 
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
-	return user, nil
+	return user, bio.String, nil
 }
 
 func (r *PostgresUserRepository) FollowUser(ctx context.Context, followerID, followingID string) error {

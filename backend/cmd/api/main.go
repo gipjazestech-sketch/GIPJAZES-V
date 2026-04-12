@@ -442,7 +442,7 @@ func main() {
 			}
 
 			// Get User Data
-			user, err := srv.userRepo.GetUserByID(context.Background(), targetUserID)
+			user, bio, err := srv.userRepo.GetUserByID(context.Background(), targetUserID)
 			if err != nil {
 				http.Error(w, "User not found", http.StatusNotFound)
 				return
@@ -463,6 +463,7 @@ func main() {
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]interface{}{
 				"user":        user,
+				"bio":         bio,
 				"followers":   followers,
 				"following":   following,
 				"videos":      videos,
