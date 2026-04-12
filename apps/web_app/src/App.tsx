@@ -586,6 +586,14 @@ const VideoPost = ({ data, token }: { data: VideoData, token: string }) => {
   const [commentCount, setCommentCount] = useState(data.comments);
   const [shareCount, setShareCount] = useState(data.shares);
 
+  const getTemplateStyle = (desc: string) => {
+    if (desc.includes('[Template: Retro]')) return { filter: 'sepia(0.6) hue-rotate(-30deg) contrast(1.2)' };
+    if (desc.includes('[Template: B&W]')) return { filter: 'grayscale(1) contrast(1.2)' };
+    if (desc.includes('[Template: Vibrant]')) return { filter: 'saturate(1.5) contrast(1.1)' };
+    if (desc.includes('[Template: Cinematic]')) return { filter: 'brightness(0.9) contrast(1.3) saturate(0.8)' };
+    return {};
+  };
+
   const formatCount = (num: number) => {
     if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
     if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
@@ -695,7 +703,7 @@ const VideoPost = ({ data, token }: { data: VideoData, token: string }) => {
         <video
           ref={videoRef}
           src={data.url}
-          style={{ width: '100%', height: '100%', objectFit: 'cover', cursor: 'pointer' }}
+          style={{ width: '100%', height: '100%', objectFit: 'cover', cursor: 'pointer', ...getTemplateStyle(data.description) }}
           onClick={togglePlay}
           onDoubleClick={handleDoubleTap}
           loop
@@ -1025,8 +1033,8 @@ const ProfileContent = ({ token, onLogout }: { token: string, onLogout: () => vo
       setEditData({
         username: data.user.username,
         display_name: data.user.display_name,
-        bio: data.user.bio || '',
-        avatar_url: data.user.avatar_url || ''
+        bio: data.user?.bio || data.bio || '',
+        avatar_url: data.user?.avatar_url || ''
       });
     } catch (e) {
       console.error(e);
@@ -1090,7 +1098,12 @@ const ProfileContent = ({ token, onLogout }: { token: string, onLogout: () => vo
                 if (file) {
                   try {
                     const res = await GIPJAZES_API.uploadAvatar(file, token);
-                    await GIPJAZES_API.updateProfile(token, { avatar_url: res.avatar_url });
+                    await GIPJAZES_API.updateProfile(token, { 
+                      avatar_url: res.avatar_url,
+                      username: profileData.user.username,
+                      display_name: profileData.user.display_name,
+                      bio: profileData.user?.bio || profileData.bio || ''
+                    });
                     alert("Profile picture updated!");
                     fetchProfile();
                   } catch (err) { alert("Upload failed: " + (err as any).message); }

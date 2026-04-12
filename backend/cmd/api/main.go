@@ -397,7 +397,7 @@ func main() {
 			var avatarUrl string
 			if cloudinaryURL != "" {
 				cld, _ := cloudinary.NewFromURL(cloudinaryURL)
-				uploadResult, err := cld.Uploaders.Upload(context.Background(), file, uploader.UploadParams{
+				uploadResult, err := cld.Upload.Upload(context.Background(), file, uploader.UploadParams{
 					Folder: "gipjazes_avatars",
 				})
 				if err != nil { http.Error(w, "Cloudinary upload failed", http.StatusInternalServerError); return }
