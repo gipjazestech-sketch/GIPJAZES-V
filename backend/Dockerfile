@@ -22,7 +22,7 @@ RUN apk --no-cache add ca-certificates
 WORKDIR /root/
 
 # Copy binary from builder
-COPY --from=builder /app/main .
+COPY --from=builder /app/backend/main .
 
 # Expose the API and gRPC ports
 EXPOSE 8080 9090
