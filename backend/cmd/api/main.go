@@ -384,7 +384,7 @@ func main() {
 
 			authHeader := r.Header.Get("Authorization")
 			if len(authHeader) < 8 { http.Error(w, "Unauthorized", http.StatusUnauthorized); return }
-			claims, err := tokenManager.Verify(authHeader[7:])
+			_, err := tokenManager.Verify(authHeader[7:])
 			if err != nil { http.Error(w, "Unauthorized", http.StatusUnauthorized); return }
 
 			err = r.ParseMultipartForm(10 << 20) // 10MB
