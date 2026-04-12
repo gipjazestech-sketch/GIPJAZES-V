@@ -296,12 +296,21 @@ h4,
 
 .action-buttons {
   position: absolute;
-  right: 15px;
-  bottom: 120px;
+  right: 12px;
+  bottom: 110px;
   display: flex;
   flex-direction: column;
-  gap: 22px;
+  gap: 16px;
   pointer-events: auto;
+  z-index: 80;
+}
+
+@media (max-width: 768px) {
+  .action-buttons {
+    bottom: 130px;
+    right: 8px;
+    gap: 14px;
+  }
 }
 
 .action-btn {
@@ -797,10 +806,47 @@ h4,
   }
   .video-info {
     bottom: 90px;
+    left: 15px;
+    right: 70px;
   }
+  
   .action-buttons {
-    bottom: 160px;
+    bottom: 120px;
+    right: 5px;
+    gap: 12px;
   }
+  
+  .btn-icon-wrapper {
+    padding: 10px;
+  }
+}
+
+/* Profile Upload Glow & Indicator */
+.profile-avatar-clickable {
+  position: relative;
+  transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.profile-avatar-clickable:hover {
+  transform: scale(1.05);
+  border-color: var(--brand-accent) !important;
+}
+
+.profile-upload-hint {
+  position: absolute;
+  bottom: 5px;
+  right: 5px;
+  background: var(--brand-primary);
+  color: black;
+  border: 3px solid var(--bg-dark);
+  border-radius: 50%;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 15px var(--brand-primary);
+  z-index: 10;
 }
 
 @keyframes pulse {

@@ -603,6 +603,15 @@ const VideoPost = ({ data, token }: { data: VideoData, token: string }) => {
     }
   };
 
+  const [isMuted, setIsMuted] = useState(true);
+  const toggleMute = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (videoRef.current) {
+      videoRef.current.muted = !isMuted;
+      setIsMuted(!isMuted);
+    }
+  };
+
   const handleLike = async () => {
     if (!token) {
       alert("Login to like!");
@@ -675,10 +684,21 @@ const VideoPost = ({ data, token }: { data: VideoData, token: string }) => {
           onDoubleClick={handleDoubleTap}
           loop
           playsInline
-          muted={false}
+          muted={isMuted}
         />
 
         <div className="video-overlay" />
+
+        {isMuted && isPlaying && (
+          <motion.div 
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            onClick={toggleMute}
+            style={{ position: 'absolute', top: '20px', right: '20px', background: 'rgba(0,0,0,0.6)', padding: '8px 12px', borderRadius: '20px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', zIndex: 100, border: '1px solid rgba(255,255,255,0.2)' }}
+          >
+            <Music size={14} /> Tap to Unmute
+          </motion.div>
+        )}
 
         <AnimatePresence>
           {showHeart && (
@@ -1043,6 +1063,7 @@ const ProfileContent = ({ token, onLogout }: { token: string, onLogout: () => vo
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: '40px' }}>
         <div style={{ position: 'relative' }}>
           <div 
+            className="profile-avatar-clickable"
             onClick={() => {
               const input = document.createElement('input');
               input.type = 'file';
@@ -1053,18 +1074,20 @@ const ProfileContent = ({ token, onLogout }: { token: string, onLogout: () => vo
                   try {
                     const res = await GIPJAZES_API.uploadAvatar(file, token);
                     await GIPJAZES_API.updateProfile(token, { avatar_url: res.avatar_url });
-                    alert("Successful");
+                    alert("Profile picture updated!");
                     fetchProfile();
-                  } catch (err) { alert("Upload failed"); }
+                  } catch (err) { alert("Upload failed: " + (err as any).message); }
                 }
               };
               input.click();
             }}
-            style={{ width: '100px', height: '100px', borderRadius: '50%', background: 'linear-gradient(45deg, var(--brand-primary), var(--brand-secondary))', marginBottom: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '2.5rem', fontWeight: 800, overflow: 'hidden', cursor: 'pointer', border: '3px solid var(--brand-primary)' }}
+            style={{ width: '120px', height: '120px', borderRadius: '50%', background: 'linear-gradient(45deg, var(--brand-primary), var(--brand-secondary))', marginBottom: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '3rem', fontWeight: 800, overflow: 'hidden', cursor: 'pointer', border: '4px solid var(--brand-primary)', boxShadow: '0 0 30px rgba(255, 0, 229, 0.3)' }}
           >
             {profileData.user?.avatar_url ? <img src={profileData.user.avatar_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : profileData.user?.username?.[0]?.toUpperCase()}
+            <div className="profile-upload-hint">
+              <PlusSquare size={20} />
+            </div>
           </div>
-          <button style={{ position: 'absolute', bottom: '15px', right: '-5px', background: 'var(--brand-primary)', border: 'none', borderRadius: '50%', width: '30px', height: '30px', cursor: 'pointer', color: 'black', pointerEvents: 'none' }}><PlusSquare size={16} /></button>
         </div>
         <h2 style={{ fontSize: '2rem', marginBottom: '4px' }}>@{profileData.user?.username}</h2>
         <p style={{ color: 'var(--text-muted)', marginBottom: '20px' }}>{profileData.user?.display_name}</p>
