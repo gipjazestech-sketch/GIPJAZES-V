@@ -61,9 +61,7 @@ const Sidebar = ({
     { name: 'For You', icon: Home },
     { name: 'Explore', icon: Compass },
     { name: 'Notifications', icon: Bell },
-    { name: 'Profile', icon: User },
-    { name: 'Wallet', icon: PlusSquare },
-    { name: 'Live', icon: Video }
+    { name: 'Profile', icon: User }
   ];
 
   const handleItemClick = (name: string) => {
@@ -1196,77 +1194,6 @@ const ProfileContent = ({ token, onLogout }: { token: string, onLogout: () => vo
   );
 };
 
-const LiveTab = ({ token }: { token: string }) => {
-  const [streams, setStreams] = useState<any[]>([]);
-  const [isStarting, setIsStarting] = useState(false);
-
-  useEffect(() => {
-    fetchStreams();
-  }, []);
-
-  const fetchStreams = async () => {
-    try {
-      const data = await GIPJAZES_API.getLiveBroadcasts();
-      setStreams(data || []);
-    } catch (e) {}
-  };
-
-  const handleStartLive = async () => {
-    if (!token) return alert("Login to go live!");
-    const title = prompt("Enter broadcast title:", "My Live Session");
-    if (!title) return;
-    setIsStarting(true);
-    try {
-      await GIPJAZES_API.startLive(token, title);
-      alert("Broadcast started! (Simulation: In a real app, your camera would turn on now)");
-      fetchStreams();
-    } catch (e) {
-      alert("Could not start broadcast");
-    } finally {
-      setIsStarting(false);
-    }
-  };
-
-  return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ color: 'white', padding: '10vh 5%', width: '100%', maxWidth: '800px', margin: '0 auto' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '40px' }}>
-        <h2 style={{ fontSize: '2rem' }}><Video size={32} color="var(--brand-danger)" style={{ verticalAlign: 'middle', marginRight: '10px' }} /> Live Now</h2>
-        <button 
-          className="upload-button" 
-          style={{ width: 'auto', padding: '10px 25px', opacity: isStarting ? 0.7 : 1 }} 
-          onClick={handleStartLive} 
-          disabled={isStarting}
-        >
-          {isStarting ? 'Starting...' : 'Go Live'}
-        </button>
-      </div>
-
-      {streams.length === 0 ? (
-        <div style={{ textAlign: 'center', marginTop: '10vh', opacity: 0.5 }}>
-          <Compass size={64} style={{ marginBottom: '20px' }} />
-          <p>No active broadcasts at the moment.</p>
-        </div>
-      ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '20px' }}>
-          {streams.map((stream: any) => (
-            <div key={stream.id} style={{ background: 'rgba(255,255,255,0.05)', borderRadius: '15px', padding: '20px', border: '1px solid rgba(255,0,0,0.2)' }}>
-              <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '15px' }}>
-                <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: 'red', animation: 'pulse 1s infinite' }} />
-                <span style={{ fontSize: '0.8rem', fontWeight: 800, color: 'red', textTransform: 'uppercase' }}>Live</span>
-                <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginLeft: 'auto' }}>{stream.views} watching</span>
-              </div>
-              <h3 style={{ marginBottom: '5px' }}>{stream.title}</h3>
-              <p style={{ color: 'var(--brand-primary)', fontSize: '0.9rem' }}>@{stream.username}</p>
-            </div>
-          ))}
-        </div>
-      )}
-    </motion.div>
-  );
-};
-
-
-
 function App() {
   const [showSplash, setShowSplash] = useState(true);
   const [activeTab, setActiveTab] = useState('For You');
@@ -1358,59 +1285,6 @@ function App() {
     );
   };
 
-  const WalletContent = ({ token }: { token: string }) => {
-    const [balance, setBalance] = useState(0);
-    const [isLoading, setIsLoading] = useState(true);
-
-    useEffect(() => {
-      const fetchBalance = async () => {
-        setIsLoading(true);
-        try {
-          const data = await GIPJAZES_API.getProfile(token);
-          setBalance(data.user.balance || 0);
-        } catch (e) {} finally { setIsLoading(false); }
-      };
-      fetchBalance();
-    }, [token]);
-
-    const handleClaim = () => {
-      setBalance(prev => prev + 50);
-      alert("Claimed 50 GAZ! 🎁 Visit daily for more.");
-    };
-
-    if (isLoading) return (
-      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
-        <div className="loader" />
-      </div>
-    );
-
-    return (
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} style={{ color: 'white', padding: '10vh 5%', width: '100%', maxWidth: '600px', margin: '0 auto' }}>
-        <div style={{ textAlign: 'center', background: 'linear-gradient(135deg, #7000FF, #FF00E5)', borderRadius: '30px', padding: '50px 30px', boxShadow: '0 20px 50px rgba(112, 0, 255, 0.3)', marginBottom: '40px', position: 'relative', overflow: 'hidden' }}>
-          <motion.div animate={{ rotate: 360 }} transition={{ duration: 10, repeat: Infinity, ease: "linear" }} style={{ position: 'absolute', top: '-50px', right: '-50px', width: '200px', height: '200px', background: 'rgba(255,255,255,0.05)', borderRadius: '50%' }} />
-          <p style={{ textTransform: 'uppercase', letterSpacing: '2px', fontSize: '0.9rem', opacity: 0.8, marginBottom: '10px' }}>Current Balance</p>
-          <h2 style={{ fontSize: '4rem', fontWeight: 800 }}>{balance} <span style={{ fontSize: '1.5rem', opacity: 0.6 }}>GAZ</span></h2>
-          <div style={{ marginTop: '20px', display: 'flex', gap: '15px', justifyContent: 'center' }}>
-             <button onClick={handleClaim} style={{ padding: '12px 24px', borderRadius: '15px', background: 'white', color: 'black', border: 'none', fontWeight: 700, cursor: 'pointer' }}>Claim Daily</button>
-             <button style={{ padding: '12px 24px', borderRadius: '15px', background: 'rgba(255,255,255,0.1)', color: 'white', border: '1px solid rgba(255,255,255,0.2)', fontWeight: 700, cursor: 'pointer' }}>Convert</button>
-          </div>
-        </div>
-        <h3 style={{ marginBottom: '20px', fontSize: '1.5rem' }}>Transaction History</h3>
-        <div style={{ background: 'rgba(255,255,255,0.03)', borderRadius: '20px', padding: '10px' }}>
-           {[1, 2].map(i => (
-             <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '15px', borderBottom: i === 1 ? '1px solid rgba(255,255,255,0.05)' : 'none' }}>
-                <div>
-                   <p style={{ fontWeight: 600 }}>{i === 1 ? 'System Reward' : 'Virtual Gift'}</p>
-                   <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>2026-04-08</p>
-                </div>
-                <p style={{ color: i === 1 ? 'var(--brand-accent)' : 'var(--brand-danger)', fontWeight: 700 }}>{i === 1 ? '+50' : '-10'} GAZ</p>
-             </div>
-           ))}
-        </div>
-      </motion.div>
-    );
-  };
-
   const renderContent = () => {
     switch (activeTab) {
       case 'For You':
@@ -1421,8 +1295,6 @@ function App() {
         return <ExploreContent />;
       case 'Notifications':
         return <NotificationsContent />;
-      case 'Wallet':
-        return <WalletContent token={sessionToken} />;
       case 'Comedy':
       case 'Music':
       case 'Gaming':
@@ -1432,10 +1304,6 @@ function App() {
         return videoFeed.map((post) => (
           <VideoPost key={post.id} data={post} token={sessionToken} />
         ));
-      case 'Live':
-        return (
-          <LiveTab token={sessionToken} />
-        );
       case 'Profile':
         return (
           <ProfileContent token={sessionToken} onLogout={() => {
