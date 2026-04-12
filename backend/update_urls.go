@@ -9,7 +9,7 @@ import (
 )
 
 func main() {
-	connStr := "postgresql://neondb_owner:npg_mWH4iehn3wku@ep-misty-frog-amra4cwk-pooler.c-5.us-east-1.aws.neon.tech/neondb?sslmode=require"
+	connStr := "postgresql://neondb_owner:npg_DPwZ7VNnCIL9@ep-aged-sky-amxwb0of-pooler.c-5.us-east-1.aws.neon.tech/neondb?channel_binding=require&sslmode=require"
 	conn, err := pgx.Connect(context.Background(), connStr)
 	if err != nil {
 		log.Fatalf("Unable to connect to database: %v", err)
