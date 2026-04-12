@@ -13,6 +13,7 @@ COPY backend ./backend
 
 # Build the API binary
 WORKDIR /app/backend
+RUN go mod tidy
 RUN go build -o main ./cmd/api/main.go
 
 # Final stage
